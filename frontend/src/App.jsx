@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, Component } from 'react';
 import { Sprout, Sun, Cloud, Snowflake, Heart, Brain, Zap, TreePine, Flower2, Activity, Send, ChevronDown, ChevronUp, Sparkles, Shield, Bug, Cpu, Radio, X, PanelRightOpen, PanelRightClose, Search, Bell, Check, XCircle, Filter } from 'lucide-react';
 import { api } from './api';
 import NeuralViz from './NeuralViz';
+import * as sfx from './SoundEngine';
 
 // ── Error Boundary ──────────────────────────────────────────────
 class ErrorBoundary extends Component {
@@ -401,6 +402,17 @@ function AppInner() {
     if (autoEvents.includes(data.event)) {
       debouncedRefresh();
       addToast(data.event, data.data);
+      // Synced sound effects
+      const eventSounds = {
+        auto_harvest: sfx.sfxHarvest,
+        auto_compost: sfx.sfxCompost,
+        auto_dream_planted: sfx.sfxDream,
+        season_change: sfx.sfxSeasonChange,
+        agent_spawned: sfx.sfxAgentSpawn,
+        agent_completed: sfx.sfxAgentComplete,
+      };
+      const soundFn = eventSounds[data.event];
+      if (soundFn) soundFn();
     }
   }, [debouncedRefresh, addToast]);
 
@@ -447,6 +459,7 @@ function AppInner() {
     try {
       await api.plant(wish);
       setWish('');
+      sfx.sfxPlant();
       await refresh();
     } catch (e) { console.error(e); }
     setLoading(false);

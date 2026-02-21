@@ -1,27 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
-import { Zap } from 'lucide-react';
+import { Zap, Volume2, VolumeX } from 'lucide-react';
+import * as sfx from './SoundEngine';
 
-// ── Seasonal color palettes ──────────────────────────────────────
+// ── Seasonal color palettes (VIVID — cranked saturation) ───────────
 const SEASON_PALETTES = {
   spring: {
-    intent: '#34d399', fractal: '#4ade80', dreaming: '#6ee7b7',
-    consciousness: '#a7f3d0', cortex: '#10b981', ethics: '#86efac',
-    energy: '#22c55e', healing: '#bbf7d0', symbiosis: '#059669',
+    intent: '#00ff88', fractal: '#22ff66', dreaming: '#44ffaa',
+    consciousness: '#00ffcc', cortex: '#00ff55', ethics: '#66ff99',
+    energy: '#33ff77', healing: '#88ffbb', symbiosis: '#00cc66',
   },
   summer: {
-    intent: '#fbbf24', fractal: '#f59e0b', dreaming: '#fcd34d',
-    consciousness: '#fde68a', cortex: '#f97316', ethics: '#fb923c',
-    energy: '#facc15', healing: '#fef08a', symbiosis: '#ea580c',
+    intent: '#ffcc00', fractal: '#ff9900', dreaming: '#ffdd33',
+    consciousness: '#ffee55', cortex: '#ff6600', ethics: '#ff8833',
+    energy: '#ffbb00', healing: '#ffee66', symbiosis: '#ff4400',
   },
   autumn: {
-    intent: '#f97316', fractal: '#ef4444', dreaming: '#fb923c',
-    consciousness: '#fbbf24', cortex: '#dc2626', ethics: '#f87171',
-    energy: '#ea580c', healing: '#fdba74', symbiosis: '#b91c1c',
+    intent: '#ff6600', fractal: '#ff2222', dreaming: '#ff8833',
+    consciousness: '#ffaa00', cortex: '#ee0000', ethics: '#ff5555',
+    energy: '#ff4400', healing: '#ffaa55', symbiosis: '#cc0000',
   },
   winter: {
-    intent: '#60a5fa', fractal: '#818cf8', dreaming: '#a78bfa',
-    consciousness: '#93c5fd', cortex: '#3b82f6', ethics: '#6366f1',
-    energy: '#38bdf8', healing: '#c4b5fd', symbiosis: '#1d4ed8',
+    intent: '#44aaff', fractal: '#7777ff', dreaming: '#aa88ff',
+    consciousness: '#66ccff', cortex: '#2288ff', ethics: '#5555ff',
+    energy: '#22ccff', healing: '#bb99ff', symbiosis: '#0044ff',
   },
 };
 
@@ -122,6 +123,8 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
   const [activePhase, setActivePhase] = useState('');
 
   const organColors = getOrganColors(season);
+  const [muted, setMuted] = useState(false);
+  const prevSeasonRef = useRef(season);
 
   // ── Initialize / reinitialize on season change ──
   useEffect(() => {
@@ -136,33 +139,52 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
         activity: existing?.activity || 0,
         phase: existing?.phase || '',
         breathe: existing?.breathe || Math.random() * Math.PI * 2,
-        orbiters: existing?.orbiters || Array.from({ length: 3 }, (_, i) => ({
-          angle: (Math.PI * 2 / 3) * i,
-          speed: 0.01 + Math.random() * 0.02,
-          dist: 28 + Math.random() * 10,
-          size: 1.5,
+        orbiters: existing?.orbiters || Array.from({ length: 5 }, (_, i) => ({
+          angle: (Math.PI * 2 / 5) * i,
+          speed: 0.012 + Math.random() * 0.025,
+          dist: 24 + Math.random() * 16,
+          size: 1.2 + Math.random() * 1.5,
         })),
         shockwaves: existing?.shockwaves || [],
       };
     }
     st.nodes = nodes;
 
-    // Motes in 3D space
+    // Motes in 3D space — more of them, varied sizes
     const colors = Object.values(organColors);
-    st.motes = Array.from({ length: 50 }, (_, i) => ({
-      x: (Math.random() - 0.5) * 3.5,
-      y: (Math.random() - 0.5) * 3.5,
-      z: (Math.random() - 0.5) * 3,
-      vx: (Math.random() - 0.5) * 0.003,
-      vy: (Math.random() - 0.5) * 0.003,
-      vz: (Math.random() - 0.5) * 0.002,
-      size: 0.5 + Math.random() * 1.5,
+    st.motes = Array.from({ length: 120 }, (_, i) => ({
+      x: (Math.random() - 0.5) * 4,
+      y: (Math.random() - 0.5) * 4,
+      z: (Math.random() - 0.5) * 3.5,
+      vx: (Math.random() - 0.5) * 0.004,
+      vy: (Math.random() - 0.5) * 0.004,
+      vz: (Math.random() - 0.5) * 0.003,
+      size: 0.3 + Math.random() * 2.5,
       color: colors[i % colors.length],
       phase: Math.random() * Math.PI * 2,
+      trail: [],
     }));
+
+    // Energy particles flowing along connections
+    st.flowParticles = Array.from({ length: 40 }, () => ({
+      connIdx: Math.floor(Math.random() * CONNECTIONS.length),
+      t: Math.random(),
+      speed: 0.003 + Math.random() * 0.008,
+      size: 1 + Math.random() * 2,
+    }));
+
     st.agentNodes = {};
     st.inited = true;
-  }, [organColors]);
+
+    // Season change sound
+    if (prevSeasonRef.current !== season && prevSeasonRef.current) {
+      sfx.sfxSeasonChange();
+    }
+    prevSeasonRef.current = season;
+    sfx.startAmbient(season);
+
+    return () => { sfx.stopAmbient(); };
+  }, [organColors, season]);
 
   // ── Sync dynamic agent nodes ──
   useEffect(() => {
@@ -310,8 +332,18 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
       const totalRotY = st.rotY + st.autoRotY;
       const totalRotX = st.rotX;
 
-      // Clear
+      // Clear with subtle radial vignette
       ctx.clearRect(0, 0, w, h);
+
+      // Aurora background wash
+      const auroraAlpha = 0.03 + Math.sin(t * 0.3) * 0.015;
+      const aGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.6);
+      const auroraColor = Object.values(st.nodes)[Math.floor(t * 0.5) % Object.keys(st.nodes).length]?.color || '#888';
+      aGrad.addColorStop(0, rgba(auroraColor, auroraAlpha));
+      aGrad.addColorStop(0.5, rgba(auroraColor, auroraAlpha * 0.3));
+      aGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = aGrad;
+      ctx.fillRect(0, 0, w, h);
 
       // Project all organ nodes to 2D
       const projected = {};
@@ -344,20 +376,43 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
         node.shockwaves = (node.shockwaves || []).filter(sw => { sw.life *= 0.94; sw.radius += (sw.max - sw.radius) * 0.08; return sw.life > 0.02; });
       }
 
-      // Motes
+      // Motes with trails
       st.motes.forEach(m => {
-        m.x += m.vx + Math.sin(t + m.phase) * 0.001;
-        m.y += m.vy + Math.cos(t * 0.7 + m.phase) * 0.001;
+        m.x += m.vx + Math.sin(t + m.phase) * 0.0015;
+        m.y += m.vy + Math.cos(t * 0.7 + m.phase) * 0.0015;
         m.z += m.vz;
-        if (m.x > 2) m.x = -2; if (m.x < -2) m.x = 2;
-        if (m.y > 2) m.y = -2; if (m.y < -2) m.y = 2;
-        if (m.z > 1.5) m.z = -1.5; if (m.z < -1.5) m.z = 1.5;
+        if (m.x > 2.5) m.x = -2.5; if (m.x < -2.5) m.x = 2.5;
+        if (m.y > 2.5) m.y = -2.5; if (m.y < -2.5) m.y = 2.5;
+        if (m.z > 1.8) m.z = -1.8; if (m.z < -1.8) m.z = 1.8;
         let { x, y, z } = rotY(m.x, m.y, m.z, totalRotY);
         ({ x, y, z } = rotX(x, y, z, totalRotX));
         const p = project(x, y, z, cx, cy, fov);
-        const flicker = 0.2 + Math.sin(t * 3 + m.phase) * 0.15;
+        const flicker = 0.3 + Math.sin(t * 4 + m.phase) * 0.2;
+        const moteR = m.size * p.scale;
+
+        // Trail
+        m.trail.push({ sx: p.sx, sy: p.sy });
+        if (m.trail.length > 4) m.trail.shift();
+        if (m.trail.length > 1 && moteR > 0.5) {
+          ctx.beginPath();
+          ctx.moveTo(m.trail[0].sx, m.trail[0].sy);
+          m.trail.forEach(tp => ctx.lineTo(tp.sx, tp.sy));
+          ctx.strokeStyle = rgba(m.color, flicker * p.scale * 0.3);
+          ctx.lineWidth = moteR * 0.5;
+          ctx.stroke();
+        }
+
+        // Mote glow
+        if (moteR > 0.8) {
+          const mg = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, moteR * 3);
+          mg.addColorStop(0, rgba(m.color, flicker * p.scale * 0.5));
+          mg.addColorStop(1, rgba(m.color, 0));
+          ctx.beginPath(); ctx.arc(p.sx, p.sy, moteR * 3, 0, Math.PI * 2);
+          ctx.fillStyle = mg; ctx.fill();
+        }
+
         ctx.beginPath();
-        ctx.arc(p.sx, p.sy, m.size * p.scale, 0, Math.PI * 2);
+        ctx.arc(p.sx, p.sy, moteR, 0, Math.PI * 2);
         ctx.fillStyle = rgba(m.color, flicker * p.scale);
         ctx.fill();
       });
@@ -372,37 +427,72 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
       // Cache projected positions for click hit-testing
       st.lastProjected = allProjected.map(p => ({ key: p.key, sx: p.sx, sy: p.sy, scale: p.scale, node: p.node }));
 
-      // Draw organ connections
-      for (const [fromLabel, toLabel] of CONNECTIONS) {
+      // Draw organ connections with energy glow
+      for (let ci = 0; ci < CONNECTIONS.length; ci++) {
+        const [fromLabel, toLabel] = CONNECTIONS[ci];
         const a = projected[fromLabel], b = projected[toLabel];
         if (!a || !b) continue;
         const act = Math.max(a.node.activity, b.node.activity) * 0.5;
-        const alpha = 0.04 + act * 0.3;
+        const alpha = 0.06 + act * 0.5;
         const avgScale = (a.scale + b.scale) / 2;
 
+        // Glow line (wide, soft)
         ctx.beginPath();
-        ctx.moveTo(a.sx, a.sy);
-        ctx.lineTo(b.sx, b.sy);
-        ctx.strokeStyle = rgba(a.node.color, alpha * avgScale);
-        ctx.lineWidth = (0.5 + act * 2) * avgScale;
+        ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy);
+        ctx.strokeStyle = rgba(a.node.color, alpha * avgScale * 0.3);
+        ctx.lineWidth = (3 + act * 8) * avgScale;
         ctx.stroke();
 
-        // Lightning jitter when active
-        if (act > 0.2) {
+        // Core line (thin, bright)
+        ctx.beginPath();
+        ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy);
+        ctx.strokeStyle = rgba(a.node.color, alpha * avgScale);
+        ctx.lineWidth = (0.8 + act * 2.5) * avgScale;
+        ctx.stroke();
+
+        // Lightning jitter when active (more segments, brighter)
+        if (act > 0.15) {
           ctx.beginPath();
           ctx.moveTo(a.sx, a.sy);
-          for (let i = 1; i <= 5; i++) {
-            const frac = i / 5;
+          const segs = 8;
+          for (let i = 1; i <= segs; i++) {
+            const frac = i / segs;
+            const jitter = (1 - Math.abs(frac - 0.5) * 2) * 14 * act * avgScale;
             ctx.lineTo(
-              a.sx + (b.sx - a.sx) * frac + (Math.random() - 0.5) * 10 * act * avgScale,
-              a.sy + (b.sy - a.sy) * frac + (Math.random() - 0.5) * 10 * act * avgScale,
+              a.sx + (b.sx - a.sx) * frac + (Math.random() - 0.5) * jitter,
+              a.sy + (b.sy - a.sy) * frac + (Math.random() - 0.5) * jitter,
             );
           }
-          ctx.strokeStyle = rgba(a.node.color, act * 0.2 * avgScale);
-          ctx.lineWidth = 1;
+          ctx.strokeStyle = rgba('#ffffff', act * 0.25 * avgScale);
+          ctx.lineWidth = (0.5 + act) * avgScale;
           ctx.stroke();
         }
       }
+
+      // Flow particles along connections
+      (st.flowParticles || []).forEach(fp => {
+        fp.t += fp.speed;
+        if (fp.t > 1) { fp.t = 0; fp.connIdx = Math.floor(Math.random() * CONNECTIONS.length); }
+        const [fromL, toL] = CONNECTIONS[fp.connIdx];
+        const a = projected[fromL], b = projected[toL];
+        if (!a || !b) return;
+        const px = a.sx + (b.sx - a.sx) * fp.t;
+        const py = a.sy + (b.sy - a.sy) * fp.t;
+        const avgScale = (a.scale + b.scale) / 2;
+        const act = Math.max(a.node.activity, b.node.activity);
+        const pAlpha = (0.15 + act * 0.6) * avgScale;
+        const pR = fp.size * avgScale;
+        // Glow
+        const pg = ctx.createRadialGradient(px, py, 0, px, py, pR * 4);
+        pg.addColorStop(0, rgba(a.node.color, pAlpha * 0.6));
+        pg.addColorStop(1, rgba(a.node.color, 0));
+        ctx.beginPath(); ctx.arc(px, py, pR * 4, 0, Math.PI * 2);
+        ctx.fillStyle = pg; ctx.fill();
+        // Core
+        ctx.beginPath(); ctx.arc(px, py, pR, 0, Math.PI * 2);
+        ctx.fillStyle = rgba('#ffffff', pAlpha * 0.8);
+        ctx.fill();
+      });
 
       // Draw agent→cortex connections (dashed style)
       const cortexP = projected['cortex'];
@@ -435,31 +525,45 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
         const act = node.activity;
         const color = node.color;
 
-        // Shockwaves
+        // Shockwaves (bigger, more dramatic)
         (node.shockwaves || []).forEach(sw => {
+          const swR = sw.radius * scale * anim;
+          // Outer glow ring
+          const swGrad = ctx.createRadialGradient(sx, sy, swR * 0.8, sx, sy, swR * 1.2);
+          swGrad.addColorStop(0, rgba(color, 0));
+          swGrad.addColorStop(0.5, rgba(color, sw.life * 0.4 * scale));
+          swGrad.addColorStop(1, rgba(color, 0));
+          ctx.beginPath(); ctx.arc(sx, sy, swR * 1.2, 0, Math.PI * 2);
+          ctx.fillStyle = swGrad; ctx.fill();
+          // Core ring
           ctx.beginPath();
-          ctx.arc(sx, sy, sw.radius * scale * anim, 0, Math.PI * 2);
-          ctx.strokeStyle = rgba(color, sw.life * 0.5 * scale);
-          ctx.lineWidth = (2 + sw.life * 3) * scale;
+          ctx.arc(sx, sy, swR, 0, Math.PI * 2);
+          ctx.strokeStyle = rgba('#ffffff', sw.life * 0.3 * scale);
+          ctx.lineWidth = (1.5 + sw.life * 4) * scale;
           ctx.stroke();
         });
 
-        // Outer glow
-        if (act > 0.02) {
-          const glowR = r + (isAgent ? 15 : 25 + act * 50) * scale * anim;
-          const grad = ctx.createRadialGradient(sx, sy, r * 0.3, sx, sy, glowR);
-          grad.addColorStop(0, rgba(color, act * 0.35 * scale));
-          grad.addColorStop(0.5, rgba(color, act * 0.1 * scale));
-          grad.addColorStop(1, rgba(color, 0));
-          ctx.beginPath(); ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
-          ctx.fillStyle = grad; ctx.fill();
-        }
+        // Outer glow (MUCH bigger bloom)
+        const glowR = r + (isAgent ? 20 : 35 + act * 80) * scale * anim;
+        const grad = ctx.createRadialGradient(sx, sy, r * 0.2, sx, sy, glowR);
+        const glowBase = isAgent ? 0.06 : 0.08;
+        grad.addColorStop(0, rgba(color, (glowBase + act * 0.5) * scale));
+        grad.addColorStop(0.3, rgba(color, (glowBase * 0.5 + act * 0.2) * scale));
+        grad.addColorStop(0.7, rgba(color, act * 0.05 * scale));
+        grad.addColorStop(1, rgba(color, 0));
+        ctx.beginPath(); ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
+        ctx.fillStyle = grad; ctx.fill();
 
-        // Pulsing ring
-        const ringR = r + (isAgent ? 4 : 6 + act * 10 + Math.sin(t * 3 + node.breathe) * 2) * scale * anim;
+        // Pulsing ring (double ring for depth)
+        const ringR = r + (isAgent ? 5 : 8 + act * 14 + Math.sin(t * 3 + node.breathe) * 3) * scale * anim;
         ctx.beginPath(); ctx.arc(sx, sy, ringR, 0, Math.PI * 2);
-        ctx.strokeStyle = rgba(color, (0.12 + act * 0.35) * scale);
-        ctx.lineWidth = (1 + act * 1.5) * scale; ctx.stroke();
+        ctx.strokeStyle = rgba(color, (0.2 + act * 0.5) * scale);
+        ctx.lineWidth = (1.2 + act * 2) * scale; ctx.stroke();
+        // Second outer ring
+        const ring2R = ringR + (3 + act * 6) * scale;
+        ctx.beginPath(); ctx.arc(sx, sy, ring2R, 0, Math.PI * 2);
+        ctx.strokeStyle = rgba(color, (0.06 + act * 0.15) * scale);
+        ctx.lineWidth = (0.5 + act * 0.8) * scale; ctx.stroke();
 
         // Agent: dashed ring for awaiting_approval
         if (isAgent && node.status === 'awaiting_approval') {
@@ -481,40 +585,61 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
           ctx.fill();
         });
 
-        // Core sphere gradient (agents are hexagonal-ish via smaller radius)
-        const coreGrad = ctx.createRadialGradient(sx - r * 0.2, sy - r * 0.25, 0, sx, sy, r);
-        coreGrad.addColorStop(0, rgba('#ffffff', (0.2 + act * 0.3) * scale * anim));
-        coreGrad.addColorStop(0.4, rgba(color, (0.6 + act * 0.4) * scale * anim));
-        coreGrad.addColorStop(1, rgba(color, (0.25 + act * 0.2) * scale * anim));
+        // Core sphere gradient (brighter, more contrast)
+        const coreGrad = ctx.createRadialGradient(sx - r * 0.15, sy - r * 0.2, 0, sx, sy, r);
+        coreGrad.addColorStop(0, rgba('#ffffff', (0.4 + act * 0.5) * scale * anim));
+        coreGrad.addColorStop(0.25, rgba(color, (0.8 + act * 0.2) * scale * anim));
+        coreGrad.addColorStop(0.7, rgba(color, (0.5 + act * 0.3) * scale * anim));
+        coreGrad.addColorStop(1, rgba(color, (0.2 + act * 0.15) * scale * anim));
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2);
         ctx.fillStyle = coreGrad; ctx.fill();
 
-        // Border (agents get a double border)
+        // Border (brighter)
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2);
-        ctx.strokeStyle = rgba(color, (0.5 + act * 0.5) * scale * anim);
-        ctx.lineWidth = (isAgent ? 1.8 : 1.2 + act * 1.2) * scale; ctx.stroke();
+        ctx.strokeStyle = rgba('#ffffff', (0.3 + act * 0.4) * scale * anim);
+        ctx.lineWidth = (isAgent ? 1.5 : 1.5 + act * 1.5) * scale; ctx.stroke();
 
-        // Hot center
-        if (act > 0.3) {
-          ctx.beginPath(); ctx.arc(sx, sy, r * 0.3, 0, Math.PI * 2);
-          ctx.fillStyle = rgba('#ffffff', act * 0.4 * scale);
-          ctx.fill();
+        // Hot center lens flare
+        if (act > 0.15) {
+          const flareR = r * (0.25 + act * 0.3);
+          const flareGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, flareR);
+          flareGrad.addColorStop(0, rgba('#ffffff', (0.5 + act * 0.5) * scale));
+          flareGrad.addColorStop(0.5, rgba('#ffffff', act * 0.2 * scale));
+          flareGrad.addColorStop(1, rgba(color, 0));
+          ctx.beginPath(); ctx.arc(sx, sy, flareR, 0, Math.PI * 2);
+          ctx.fillStyle = flareGrad; ctx.fill();
+          // Cross flare
+          if (act > 0.5) {
+            const flareLen = r * (1 + act * 2);
+            ctx.save();
+            ctx.globalAlpha = act * 0.15 * scale;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1 * scale;
+            ctx.beginPath(); ctx.moveTo(sx - flareLen, sy); ctx.lineTo(sx + flareLen, sy); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(sx, sy - flareLen); ctx.lineTo(sx, sy + flareLen); ctx.stroke();
+            ctx.restore();
+          }
         }
 
-        // Label
-        const fontSize = Math.max(7, (isAgent ? 8 : 10) * scale);
-        ctx.fillStyle = rgba('#ffffff', (0.5 + act * 0.4) * scale * anim);
-        ctx.font = `${act > 0.3 ? 'bold ' : ''}${fontSize}px monospace`;
+        // Label (with text glow)
+        const fontSize = Math.max(8, (isAgent ? 9 : 11) * scale);
+        ctx.save();
+        ctx.shadowColor = color;
+        ctx.shadowBlur = (4 + act * 10) * scale;
+        ctx.fillStyle = rgba('#ffffff', (0.6 + act * 0.4) * scale * anim);
+        ctx.font = `${act > 0.2 ? 'bold ' : ''}${fontSize}px monospace`;
         ctx.textAlign = 'center';
-        ctx.fillText(node.label.toUpperCase(), sx, sy + r + (isAgent ? 10 : 14) * scale);
+        ctx.fillText(node.label.toUpperCase(), sx, sy + r + (isAgent ? 12 : 16) * scale);
+        ctx.restore();
 
         // Phase / status label
-        if (node.phase && act > 0.1) {
+        if (node.phase && act > 0.08) {
           ctx.save();
-          ctx.shadowColor = color; ctx.shadowBlur = 6 * scale;
-          ctx.fillStyle = rgba(color, (0.7 + act * 0.3) * scale);
-          ctx.font = `${Math.max(6, (isAgent ? 7 : 9) * scale)}px monospace`;
-          ctx.fillText(node.phase, sx, sy - r - (isAgent ? 6 : 8) * scale);
+          ctx.shadowColor = color; ctx.shadowBlur = 8 * scale;
+          ctx.fillStyle = rgba(color, (0.8 + act * 0.2) * scale);
+          ctx.font = `bold ${Math.max(7, (isAgent ? 8 : 10) * scale)}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.fillText(node.phase, sx, sy - r - (isAgent ? 8 : 10) * scale);
           ctx.restore();
         }
       }
@@ -549,11 +674,17 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
 
     if (organ && st.nodes[organ]) {
       const node = st.nodes[organ];
+      const wasLow = node.activity < 0.3;
       node.activity = Math.min(node.activity + 0.5, 1.0);
       node.phase = phase || '';
-      node.shockwaves.push({ radius: 5, max: 70 + Math.random() * 30, life: 1 });
-      if (node.orbiters.length < 8) {
-        node.orbiters.push({ angle: Math.random() * Math.PI * 2, speed: 0.03 + Math.random() * 0.03, dist: 32 + Math.random() * 18, size: 2 + Math.random() * 2 });
+      node.shockwaves.push({ radius: 5, max: 90 + Math.random() * 50, life: 1 });
+      if (node.orbiters.length < 10) {
+        node.orbiters.push({ angle: Math.random() * Math.PI * 2, speed: 0.03 + Math.random() * 0.03, dist: 28 + Math.random() * 22, size: 1.5 + Math.random() * 2.5 });
+      }
+      // Sound: pulse on organ activation
+      if (wasLow) {
+        const organFreqs = { cortex: 440, consciousness: 523, fractal: 392, ethics: 349, intent: 330, dreaming: 587, energy: 294, healing: 370, symbiosis: 262 };
+        sfx.sfxPulse(organFreqs[organ] || 440);
       }
     }
     if (token || content) setActiveTokens(content.slice(-150));
@@ -561,14 +692,33 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
     if (phase) setActivePhase(phase);
   }, [thinkingEvents]);
 
+  const handleMuteToggle = () => {
+    const next = !muted;
+    setMuted(next);
+    sfx.setMuted(next);
+    if (!next) {
+      sfx.unlock();
+      sfx.startAmbient(season);
+    }
+  };
+
   return (
-    <div className="relative w-full h-full" style={{ cursor: 'grab' }}>
+    <div className="relative w-full h-full" style={{ cursor: 'grab' }} onClick={() => sfx.unlock()}>
       <canvas ref={canvasRef} className="w-full h-full" style={{ display: 'block' }} />
+
+      {/* Mute toggle */}
+      <button
+        onClick={(e) => { e.stopPropagation(); handleMuteToggle(); }}
+        className="absolute bottom-3 left-3 z-30 p-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white/50 hover:text-white/80 transition-colors"
+        title={muted ? 'Unmute sounds' : 'Mute sounds'}
+      >
+        {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+      </button>
 
       {/* Active organ indicator */}
       {activeOrgan && (
         <div className="absolute top-3 left-3 pointer-events-none">
-          <span className="text-xs px-2.5 py-1 rounded-full backdrop-blur-md animate-pulse" style={{ backgroundColor: rgba(organColors[activeOrgan] || '#888', 0.2), color: organColors[activeOrgan] || '#888', boxShadow: `0 0 12px ${rgba(organColors[activeOrgan] || '#888', 0.3)}`, border: `1px solid ${rgba(organColors[activeOrgan] || '#888', 0.3)}` }}>
+          <span className="text-xs px-2.5 py-1 rounded-full backdrop-blur-md animate-pulse" style={{ backgroundColor: rgba(organColors[activeOrgan] || '#888', 0.25), color: organColors[activeOrgan] || '#888', boxShadow: `0 0 16px ${rgba(organColors[activeOrgan] || '#888', 0.4)}`, border: `1px solid ${rgba(organColors[activeOrgan] || '#888', 0.4)}` }}>
             {activeOrgan} · {activePhase}
           </span>
         </div>
@@ -578,8 +728,8 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
       {activeTokens && (
         <div className="absolute bottom-16 left-0 right-0 p-4 bg-gradient-to-t from-black/60 via-black/30 to-transparent pointer-events-none">
           <div className="flex items-start gap-2 max-w-xl">
-            <Zap size={14} className="text-yellow-400 mt-0.5 shrink-0 animate-pulse drop-shadow-[0_0_6px_rgba(250,204,21,0.5)]" />
-            <p className="text-xs text-white/70 font-mono leading-relaxed break-words">
+            <Zap size={14} className="text-yellow-400 mt-0.5 shrink-0 animate-pulse drop-shadow-[0_0_8px_rgba(250,204,21,0.6)]" />
+            <p className="text-xs text-white/80 font-mono leading-relaxed break-words">
               {activeTokens}
               <span className="inline-block w-2 h-3.5 bg-yellow-400/80 ml-0.5 animate-pulse rounded-sm" />
             </p>
