@@ -27,10 +27,12 @@ class ErrorBoundary extends Component {
 }
 
 // ── WebSocket with reconnection ─────────────────────────────────
-function useReconnectingWebSocket(path, onMessage, deps = []) {
+function useReconnectingWebSocket(path, onMessage) {
   const wsRef = useRef(null);
   const retryRef = useRef(1);
   const mountedRef = useRef(true);
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => { onMessageRef.current = onMessage; });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -47,7 +49,7 @@ function useReconnectingWebSocket(path, onMessage, deps = []) {
         retryRef.current = 1;
       };
       ws.onmessage = (e) => {
-        try { onMessage(JSON.parse(e.data)); } catch { /* ignored */ }
+        try { onMessageRef.current(JSON.parse(e.data)); } catch { /* ignored */ }
       };
       ws.onclose = () => {
         if (!mountedRef.current) return;
@@ -65,7 +67,7 @@ function useReconnectingWebSocket(path, onMessage, deps = []) {
       clearTimeout(timer);
       wsRef.current?.close();
     };
-  }, deps);
+  }, [path]);
 
   return wsRef;
 }
@@ -402,13 +404,13 @@ function AppInner() {
     }
   }, [debouncedRefresh, addToast]);
 
-  useReconnectingWebSocket('/ws/garden', gardenWsHandler, [gardenWsHandler]);
+  useReconnectingWebSocket('/ws/garden', gardenWsHandler);
 
   const thinkingWsHandler = useCallback((data) => {
     setThinkingEvents((prev) => [...prev.slice(-199), data]);
   }, []);
 
-  useReconnectingWebSocket('/ws/thinking', thinkingWsHandler, [thinkingWsHandler]);
+  useReconnectingWebSocket('/ws/thinking', thinkingWsHandler);
 
   useEffect(() => {
     const check = () => {
