@@ -176,12 +176,12 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
     st.agentNodes = {};
     st.inited = true;
 
-    // Season change sound
+    // Season change sound (only if audio already unlocked)
     if (prevSeasonRef.current !== season && prevSeasonRef.current) {
       sfx.sfxSeasonChange();
     }
     prevSeasonRef.current = season;
-    sfx.startAmbient(season);
+    if (sfx.isUnlocked()) sfx.startAmbient(season);
 
     return () => { sfx.stopAmbient(); };
   }, [organColors, season]);
@@ -681,10 +681,10 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
       if (node.orbiters.length < 10) {
         node.orbiters.push({ angle: Math.random() * Math.PI * 2, speed: 0.03 + Math.random() * 0.03, dist: 28 + Math.random() * 22, size: 1.5 + Math.random() * 2.5 });
       }
-      // Sound: pulse on organ activation
+      // Sound: throttled pulse on organ activation (max 1 per organ per 3s)
       if (wasLow) {
         const organFreqs = { cortex: 440, consciousness: 523, fractal: 392, ethics: 349, intent: 330, dreaming: 587, energy: 294, healing: 370, symbiosis: 262 };
-        sfx.sfxPulse(organFreqs[organ] || 440);
+        sfx.sfxPulseThrottled(organFreqs[organ] || 440, organ, 3000);
       }
     }
     if (token || content) setActiveTokens(content.slice(-150));
@@ -693,17 +693,17 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
   }, [thinkingEvents]);
 
   const handleMuteToggle = () => {
+    sfx.unlock();
     const next = !muted;
     setMuted(next);
     sfx.setMuted(next);
     if (!next) {
-      sfx.unlock();
       sfx.startAmbient(season);
     }
   };
 
   return (
-    <div className="relative w-full h-full" style={{ cursor: 'grab' }} onClick={() => sfx.unlock()}>
+    <div className="relative w-full h-full" style={{ cursor: 'grab' }} onClick={() => { sfx.unlock(); if (!muted && sfx.isUnlocked()) sfx.startAmbient(season); }}>
       <canvas ref={canvasRef} className="w-full h-full" style={{ display: 'block' }} />
 
       {/* Mute toggle */}

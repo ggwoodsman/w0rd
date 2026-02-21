@@ -11,8 +11,9 @@ let compressor = null;
 let reverbNode = null;
 let _muted = false;
 let _volume = 0.35;
+let _unlocked = false;
 
-function getCtx() {
+function _initCtx() {
   if (ctx && ctx.state !== 'closed') return ctx;
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   
@@ -37,6 +38,11 @@ function getCtx() {
   return ctx;
 }
 
+function getCtx() {
+  if (!_unlocked) return null;
+  return _initCtx();
+}
+
 function createReverb(audioCtx) {
   const convolver = audioCtx.createGain();
   // We'll use a delay-based pseudo-reverb for simplicity
@@ -57,11 +63,12 @@ function createReverb(audioCtx) {
   return convolver;
 }
 
-function now() { return getCtx().currentTime; }
+function now() { return ctx ? ctx.currentTime : 0; }
 
 function playNote(freq, duration, type = 'sine', gainVal = 0.15, opts = {}) {
-  if (_muted) return;
+  if (_muted || !_unlocked) return;
   const c = getCtx();
+  if (!c) return;
   const t = now();
   
   const osc = c.createOscillator();
@@ -105,8 +112,9 @@ function playNote(freq, duration, type = 'sine', gainVal = 0.15, opts = {}) {
 }
 
 function playNoise(duration, gainVal = 0.05, opts = {}) {
-  if (_muted) return;
+  if (_muted || !_unlocked) return;
   const c = getCtx();
+  if (!c) return;
   const t = now();
   
   const bufferSize = c.sampleRate * duration;
@@ -240,8 +248,9 @@ let _ambientGain = null;
 
 export function startAmbient(season = 'spring') {
   stopAmbient();
-  if (_muted) return;
+  if (_muted || !_unlocked) return;
   const c = getCtx();
+  if (!c) return;
   
   const configs = {
     spring:  { freqs: [130.81, 196.00, 261.63], type: 'sine', vol: 0.012, filterFreq: 800 },
@@ -314,8 +323,23 @@ export function setMuted(m) {
 
 export function isMuted() { return _muted; }
 
+// Throttle map: key → last-played timestamp
+const _throttleMap = {};
+
+/** Throttled version of sfxPulse — max once per organ per cooldown */
+export function sfxPulseThrottled(freq = 440, key = 'default', cooldownMs = 3000) {
+  const now = Date.now();
+  if (_throttleMap[key] && now - _throttleMap[key] < cooldownMs) return;
+  _throttleMap[key] = now;
+  sfxPulse(freq);
+}
+
 /** Must be called from a user gesture to unlock Web Audio */
 export function unlock() {
-  const c = getCtx();
+  if (_unlocked && ctx && ctx.state === 'running') return;
+  _unlocked = true;
+  const c = _initCtx();
   if (c.state === 'suspended') c.resume();
 }
+
+export function isUnlocked() { return _unlocked; }
