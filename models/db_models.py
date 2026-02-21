@@ -251,6 +251,108 @@ class AgentNode(Base):
     )
 
 
+# ── Emotional State ───────────────────────────────────────────────
+
+class EmotionalState(Base):
+    __tablename__ = "emotional_states"
+
+    id = Column(String, primary_key=True, default=_uid)
+    joy = Column(Float, default=0.5)
+    curiosity = Column(Float, default=0.5)
+    anxiety = Column(Float, default=0.1)
+    pride = Column(Float, default=0.3)
+    grief = Column(Float, default=0.0)
+    wonder = Column(Float, default=0.4)
+    dominant_emotion = Column(String, default="curiosity")
+    intensity = Column(Float, default=0.5)                  # 0..1 overall emotional intensity
+    trigger_event = Column(String, default="")               # what caused this state
+    created_at = Column(Float, default=_now)
+
+
+# ── Inner Thought ────────────────────────────────────────────────
+
+class InnerThought(Base):
+    __tablename__ = "inner_thoughts"
+
+    id = Column(String, primary_key=True, default=_uid)
+    thought_type = Column(String, default="reflection")      # reflection, question, observation, rumination, wonder
+    content = Column(Text, nullable=False)
+    emotional_context = Column(Text, default="{}")           # JSON snapshot of emotional state
+    trigger = Column(String, default="")                     # what prompted this thought
+    depth = Column(Integer, default=0)                       # 0=surface, 1=deeper, 2=profound
+    salience = Column(Float, default=0.5)                    # how important/memorable 0..1
+    created_at = Column(Float, default=_now)
+
+    __table_args__ = (
+        Index("ix_thoughts_type", "thought_type"),
+        Index("ix_thoughts_salience", "salience"),
+    )
+
+
+# ── Autobiographical Memory ──────────────────────────────────────
+
+class EpisodicMemory(Base):
+    __tablename__ = "episodic_memories"
+
+    id = Column(String, primary_key=True, default=_uid)
+    narrative = Column(Text, nullable=False)                 # 1-2 sentence memory
+    event_type = Column(String, nullable=False)              # harvest, wound, dream, season_change, etc.
+    emotional_valence = Column(Float, default=0.0)           # -1..+1
+    emotional_intensity = Column(Float, default=0.5)         # 0..1
+    themes = Column(Text, default="[]")                      # JSON list of themes
+    related_seed_ids = Column(Text, default="[]")            # JSON list
+    is_core_memory = Column(Boolean, default=False)          # consolidated as deeply significant
+    recall_count = Column(Integer, default=0)                # how often this memory is accessed
+    last_recalled = Column(Float, nullable=True)
+    created_at = Column(Float, default=_now)
+
+    __table_args__ = (
+        Index("ix_memories_event_type", "event_type"),
+        Index("ix_memories_core", "is_core_memory"),
+        Index("ix_memories_valence", "emotional_valence"),
+    )
+
+
+# ── Prediction ───────────────────────────────────────────────────
+
+class Prediction(Base):
+    __tablename__ = "predictions"
+
+    id = Column(String, primary_key=True, default=_uid)
+    prediction_type = Column(String, nullable=False)         # seed_outcome, dream_topic, energy_trend, season_event
+    subject_id = Column(String, default="")                  # seed/dream id being predicted about
+    predicted_outcome = Column(Text, nullable=False)         # what was predicted
+    actual_outcome = Column(Text, default="")                # what actually happened
+    confidence = Column(Float, default=0.5)                  # 0..1 how confident
+    surprise_score = Column(Float, default=0.0)              # 0..1 how surprised (prediction error)
+    resolved = Column(Boolean, default=False)
+    resolved_at = Column(Float, nullable=True)
+    created_at = Column(Float, default=_now)
+
+    __table_args__ = (
+        Index("ix_predictions_type", "prediction_type"),
+        Index("ix_predictions_resolved", "resolved"),
+        Index("ix_predictions_surprise", "surprise_score"),
+    )
+
+
+# ── Self-Model ───────────────────────────────────────────────────
+
+class SelfModelSnapshot(Base):
+    __tablename__ = "self_model_snapshots"
+
+    id = Column(String, primary_key=True, default=_uid)
+    harvest_rate = Column(Float, default=0.0)                # % of seeds that get harvested
+    compost_rate = Column(Float, default=0.0)                # % of seeds composted
+    dream_accuracy = Column(Float, default=0.0)              # % of dreams that became good seeds
+    theme_affinities = Column(Text, default="{}")            # JSON {theme: success_rate}
+    decision_accuracy = Column(Text, default="{}")           # JSON {decision_type: accuracy}
+    personality_traits = Column(Text, default="{}")          # JSON {trait: strength} emergent personality
+    bias_warnings = Column(Text, default="[]")               # JSON list of detected biases
+    identity_narrative = Column(Text, default="")            # "who I am" summary
+    created_at = Column(Float, default=_now)
+
+
 # ── Hormone Log ───────────────────────────────────────────────────
 
 class HormoneLog(Base):

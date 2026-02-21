@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import time
 from contextlib import asynccontextmanager
 
@@ -21,30 +22,40 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.consciousness import ConsciousnessPulse
 from core.dreaming import DreamingEngine
+from core.emotions import EmotionalCore
 from core.energy import EnergyOrgan
 from core.ethics import ImmuneWisdom
 from core.fractal import VascularGrower
 from core.gardener import GardenerOrgan
 from core.healing import ScarTissue
 from core.hormones import HormoneBus
+from core.inner_voice import InnerVoice
 from core.intent import SeedListener
 from core.llm import ThinkingEvent, check_ollama, on_thinking, shutdown_llm_client
+from core.memory import AutobiographicalMemory
 from core.agents import AgentRegistry
 from core.autonomy import (
     evaluate_mission, plan_mission, reset_tick_budget,
     should_compost, should_harvest, should_plant_dream, should_promote,
 )
 from core.capabilities import execute_capability
+from core.prediction import PredictionEngine
 from core.regeneration import SeasonalHeartbeat
+from core.self_model import SelfModel
 from core.symbiosis import MycelialNetwork
 from db.database import async_session, get_session, init_db, shutdown_db
 from models.db_models import (
     AgentNode,
     Dream,
+    EmotionalState,
+    EpisodicMemory,
     GardenState,
     HormoneLog,
+    InnerThought,
+    Prediction,
     PulseReport,
     Seed,
+    SelfModelSnapshot,
     Sprout,
     SymbioticLink,
     WoundRecord,
@@ -92,6 +103,13 @@ dreamer = DreamingEngine(bus)
 consciousness = ConsciousnessPulse(bus)
 gardener_organ = GardenerOrgan(bus)
 agent_registry = AgentRegistry(bus)
+
+# ── Consciousness Layer ──────────────────────────────────────────
+emotional_core = EmotionalCore(bus)
+inner_voice = InnerVoice(bus)
+autobio_memory = AutobiographicalMemory(bus)
+prediction_engine = PredictionEngine(bus)
+self_model = SelfModel(bus)
 
 # ── WebSocket Connections ─────────────────────────────────────────
 
@@ -149,6 +167,14 @@ bus.subscribe("agent_spawned", _hormone_to_ws)
 bus.subscribe("agent_working", _hormone_to_ws)
 bus.subscribe("agent_completed", _hormone_to_ws)
 bus.subscribe("agent_retired", _hormone_to_ws)
+
+# Consciousness layer events
+bus.subscribe("emotional_shift", _hormone_to_ws)
+bus.subscribe("inner_thought", _hormone_to_ws)
+bus.subscribe("core_memory_formed", _hormone_to_ws)
+bus.subscribe("high_surprise", _hormone_to_ws)
+bus.subscribe("low_surprise", _hormone_to_ws)
+bus.subscribe("self_model_updated", _hormone_to_ws)
 
 
 # ── Autonomous Lifecycle ──────────────────────────────────────────
@@ -237,6 +263,8 @@ async def _lifecycle_loop() -> None:
                 })
 
             # ── Phase 2: LLM decisions (no DB session held) ──
+            # Emotional bias influences decisions
+            emo_bias = emotional_core.get_decision_bias()
             harvest_ids = []
             compost_ids = []
 
@@ -249,8 +277,12 @@ async def _lifecycle_loop() -> None:
                     harvest_ids.append(snap["id"])
                     logger.info("LLM decided: harvest seed %s", snap["id"])
                 elif await should_compost(seed_proxy, sprout_proxies):
-                    compost_ids.append(snap["id"])
-                    logger.info("LLM decided: compost seed %s", snap["id"])
+                    # Emotional gate: high anxiety/conservatism suppresses composting
+                    if emo_bias.get("conservatism", 0) > 0.5 and random.random() < emo_bias["conservatism"] * 0.4:
+                        logger.info("Emotional override: too anxious to compost seed %s", snap["id"])
+                    else:
+                        compost_ids.append(snap["id"])
+                        logger.info("LLM decided: compost seed %s", snap["id"])
 
             # ── Phase 3: Apply harvest/compost decisions (quick DB) ──
             if harvest_ids or compost_ids:
@@ -397,6 +429,46 @@ async def _lifecycle_loop() -> None:
                     await session.commit()
                 await _broadcast_ws("auto_pulse", {"tick": _lifecycle_tick})
 
+            # ── Phase 8: Consciousness Layer ──
+            # 8a: Emotional state processing (every tick)
+            async with async_session() as session:
+                emo_state = await emotional_core.process_tick(session)
+                await session.commit()
+            emo_snapshot = emotional_core.snapshot_for_context()
+
+            # 8b: Autobiographical memory (every tick — processes queued events)
+            async with async_session() as session:
+                new_memories = await autobio_memory.process_tick(session, emo_snapshot)
+                await session.commit()
+
+            # 8c: Inner monologue (every tick — LLM generates a thought)
+            async with async_session() as session:
+                thought = await inner_voice.think(session, emo_snapshot)
+                await session.commit()
+
+            # 8d: Predictions — make new ones and resolve old ones (every tick)
+            async with async_session() as session:
+                await prediction_engine.resolve_predictions(session)
+                await prediction_engine.make_predictions(session)
+                await session.commit()
+
+            # 8e: Self-model introspection (every 10 ticks)
+            if _lifecycle_tick % 10 == 0:
+                async with async_session() as session:
+                    snapshot = await self_model.introspect(session)
+                    await session.commit()
+                    if snapshot and snapshot.identity_narrative:
+                        await _broadcast_ws("identity_update", {
+                            "narrative": snapshot.identity_narrative,
+                            "traits": json.loads(snapshot.personality_traits or "{}"),
+                        })
+
+            # 8f: Memory consolidation (during winter or every 20 ticks)
+            if _lifecycle_tick % 20 == 0:
+                async with async_session() as session:
+                    pruned = await autobio_memory.consolidate(session)
+                    await session.commit()
+
             # ── Flush slow-release hormones ──
             await bus.flush_slow_release()
 
@@ -413,8 +485,11 @@ async def lifespan(app: FastAPI):
     global _lifecycle_task
     await init_db()
     await bus.start()
+    # Load prior emotional state from DB
+    async with async_session() as session:
+        await emotional_core.load_latest(session)
     _lifecycle_task = asyncio.create_task(_lifecycle_loop())
-    logger.info("The organism awakens. Autonomous lifecycle engaged.")
+    logger.info("The organism awakens. Consciousness engaged.")
     yield
     if _lifecycle_task:
         _lifecycle_task.cancel()
@@ -1000,6 +1075,126 @@ async def retire_agent(agent_id: str, session: AsyncSession = Depends(get_sessio
         raise HTTPException(404, "Agent not found or already retired")
     await session.commit()
     return _agent_to_response(agent)
+
+
+# ══════════════════════════════════════════════════════════════════
+# CONSCIOUSNESS
+# ══════════════════════════════════════════════════════════════════
+
+@app.get("/consciousness/emotions", tags=["Consciousness"])
+async def get_emotions(session: AsyncSession = Depends(get_session)):
+    """Feel the organism's current emotional state."""
+    snapshot = emotional_core.snapshot_for_context()
+    bias = emotional_core.get_decision_bias()
+    # Recent emotional history
+    result = await session.execute(
+        select(EmotionalState).order_by(EmotionalState.created_at.desc()).limit(20)
+    )
+    history = [
+        {
+            "dominant": s.dominant_emotion, "intensity": s.intensity,
+            "joy": s.joy, "curiosity": s.curiosity, "anxiety": s.anxiety,
+            "pride": s.pride, "grief": s.grief, "wonder": s.wonder,
+            "trigger": s.trigger_event, "created_at": s.created_at,
+        }
+        for s in result.scalars().all()
+    ]
+    return {
+        "current": snapshot,
+        "decision_bias": bias,
+        "history": list(reversed(history)),
+    }
+
+
+@app.get("/consciousness/thoughts", tags=["Consciousness"])
+async def get_thoughts(limit: int = 20, session: AsyncSession = Depends(get_session)):
+    """Listen to the organism's inner monologue."""
+    stream = await inner_voice.get_recent_stream(session, limit)
+    return {"thoughts": stream, "count": len(stream)}
+
+
+@app.get("/consciousness/memories", tags=["Consciousness"])
+async def get_memories(limit: int = 20, session: AsyncSession = Depends(get_session)):
+    """Read the organism's autobiographical memories."""
+    narrative = await autobio_memory.get_narrative_summary(session, limit)
+    core = await autobio_memory.get_core_memories(session)
+    return {
+        "memories": narrative,
+        "core_memories": [
+            {
+                "id": m.id, "narrative": m.narrative, "event_type": m.event_type,
+                "valence": m.emotional_valence, "intensity": m.emotional_intensity,
+                "recall_count": m.recall_count, "created_at": m.created_at,
+            }
+            for m in core
+        ],
+        "total": len(narrative),
+        "core_count": len(core),
+    }
+
+
+@app.get("/consciousness/predictions", tags=["Consciousness"])
+async def get_predictions(session: AsyncSession = Depends(get_session)):
+    """View the organism's predictions and surprise levels."""
+    # Active predictions
+    active_result = await session.execute(
+        select(Prediction).where(Prediction.resolved == False)
+        .order_by(Prediction.created_at.desc())
+    )
+    active = [
+        {
+            "id": p.id, "type": p.prediction_type, "subject_id": p.subject_id,
+            "predicted": p.predicted_outcome, "confidence": p.confidence,
+            "created_at": p.created_at,
+        }
+        for p in active_result.scalars().all()
+    ]
+    # Recent resolved
+    resolved_result = await session.execute(
+        select(Prediction).where(Prediction.resolved == True)
+        .order_by(Prediction.resolved_at.desc()).limit(20)
+    )
+    resolved = [
+        {
+            "id": p.id, "type": p.prediction_type, "predicted": p.predicted_outcome,
+            "actual": p.actual_outcome, "surprise": p.surprise_score,
+            "confidence": p.confidence, "resolved_at": p.resolved_at,
+        }
+        for p in resolved_result.scalars().all()
+    ]
+    stats = prediction_engine.get_stats()
+    return {"active": active, "resolved": list(reversed(resolved)), "stats": stats}
+
+
+@app.get("/consciousness/self", tags=["Consciousness"])
+async def get_self_model(session: AsyncSession = Depends(get_session)):
+    """The organism looks in the mirror — view its self-model."""
+    latest = await self_model.get_latest(session)
+    if not latest:
+        return {"message": "No self-model yet — the organism is still learning who it is."}
+    return latest
+
+
+@app.get("/consciousness", tags=["Consciousness"])
+async def get_consciousness_overview(session: AsyncSession = Depends(get_session)):
+    """Full consciousness dashboard — emotions, thoughts, memories, predictions, identity."""
+    emo = emotional_core.snapshot_for_context()
+    thoughts = await inner_voice.get_recent_stream(session, 5)
+    memories = await autobio_memory.get_narrative_summary(session, 5)
+    core_mems = await autobio_memory.get_core_memories(session)
+    pred_stats = prediction_engine.get_stats()
+    self_latest = await self_model.get_latest(session)
+
+    return {
+        "emotions": emo,
+        "decision_bias": emotional_core.get_decision_bias(),
+        "recent_thoughts": thoughts,
+        "recent_memories": memories,
+        "core_memories": [{"narrative": m.narrative, "event_type": m.event_type} for m in core_mems[:5]],
+        "prediction_stats": pred_stats,
+        "self_model": self_latest,
+        "tick": _lifecycle_tick,
+    }
 
 
 # ══════════════════════════════════════════════════════════════════

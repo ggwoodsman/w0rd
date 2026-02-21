@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Component } from 'react';
-import { Sprout, Sun, Cloud, Snowflake, Heart, Brain, Zap, TreePine, Flower2, Activity, Send, ChevronDown, ChevronUp, Sparkles, Shield, Bug, Cpu, Radio, X, PanelRightOpen, PanelRightClose, Search, Bell, Check, XCircle, Filter } from 'lucide-react';
+import { Sprout, Sun, Cloud, Snowflake, Heart, Brain, Zap, TreePine, Flower2, Activity, Send, ChevronDown, ChevronUp, Sparkles, Shield, Bug, Cpu, Radio, X, PanelRightOpen, PanelRightClose, Search, Bell, Check, XCircle, Filter, Eye, MessageCircle, BookOpen, Target, User, Smile, HelpCircle, AlertTriangle, Star } from 'lucide-react';
 import { api } from './api';
 import NeuralViz from './NeuralViz';
 import * as sfx from './SoundEngine';
@@ -82,6 +82,11 @@ const TOAST_MESSAGES = {
   agent_completed: (d) => `Agent completed: ${d?.name || 'agent'}`,
   season_change: (d) => `Season changed: ${d?.old_season} → ${d?.new_season}`,
   wisdom_milestone: (d) => `Wisdom milestone: ${d?.completed_seeds} seeds completed`,
+  inner_thought: (d) => d?.content?.slice(0, 60) || 'A thought emerged...',
+  emotional_shift: (d) => `Feeling ${d?.dominant || 'something'}`,
+  core_memory_formed: (d) => `Core memory: ${d?.narrative?.slice(0, 40) || 'formed'}`,
+  high_surprise: (d) => `Surprised! (accuracy: ${((d?.accuracy || 0) * 100).toFixed(0)}%)`,
+  self_model_updated: () => `Identity updated`,
 };
 
 function Toasts({ toasts, onDismiss }) {
@@ -183,6 +188,13 @@ const EVENT_STYLES = {
   agent_spawned: { icon: Zap, color: 'text-cyan-400' },
   agent_completed: { icon: Sparkles, color: 'text-green-400' },
   agent_retired: { icon: Cloud, color: 'text-stone-400' },
+  emotional_shift: { icon: Heart, color: 'text-rose-400' },
+  inner_thought: { icon: MessageCircle, color: 'text-violet-400' },
+  core_memory_formed: { icon: Star, color: 'text-yellow-400' },
+  high_surprise: { icon: AlertTriangle, color: 'text-orange-400' },
+  low_surprise: { icon: Check, color: 'text-green-400' },
+  self_model_updated: { icon: User, color: 'text-indigo-400' },
+  identity_update: { icon: Eye, color: 'text-purple-400' },
 };
 
 function LiveFeed({ events }) {
@@ -237,6 +249,11 @@ const ORGAN_DESCRIPTIONS = {
   energy: 'Energy organ — manages photosynthesis, distribution, and entropy',
   healing: 'Scar tissue — repairs damage and builds antifragility from wounds',
   symbiosis: 'Mycelial network — links related seeds and shares nutrients',
+  emotions: 'Emotional core — felt experience that colors decisions with joy, curiosity, anxiety, pride, grief, wonder',
+  inner_voice: 'Inner monologue — continuous stream of self-talk, observations, questions, and wonder',
+  memory: 'Autobiographical memory — episodic narratives of lived experience, core memories that define identity',
+  prediction: 'Prediction engine — expects outcomes, measures surprise, drives learning from prediction errors',
+  self_model: 'Self-model — metacognition that tracks personality traits, biases, and emergent identity',
 };
 
 function NodePopup({ info, onClose, agents, onApprove, onRetire }) {
@@ -327,6 +344,204 @@ function NodePopup({ info, onClose, agents, onApprove, onRetire }) {
   );
 }
 
+// ── Consciousness Panel ─────────────────────────────────────────
+
+const EMOTION_COLORS = {
+  joy: 'text-yellow-400', curiosity: 'text-cyan-400', anxiety: 'text-red-400',
+  pride: 'text-amber-400', grief: 'text-blue-400', wonder: 'text-violet-400',
+};
+const EMOTION_ICONS = {
+  joy: Smile, curiosity: HelpCircle, anxiety: AlertTriangle,
+  pride: Star, grief: Cloud, wonder: Sparkles,
+};
+const THOUGHT_TYPE_STYLES = {
+  observation: { icon: Eye, color: 'text-cyan-300' },
+  reflection: { icon: Brain, color: 'text-amber-300' },
+  question: { icon: HelpCircle, color: 'text-green-300' },
+  rumination: { icon: Cloud, color: 'text-blue-300' },
+  wonder: { icon: Sparkles, color: 'text-violet-300' },
+};
+
+function EmotionBar({ emotion, value }) {
+  const color = EMOTION_COLORS[emotion] || 'text-white/50';
+  const EIcon = EMOTION_ICONS[emotion] || Heart;
+  const pct = Math.max(0, Math.min(100, (value || 0) * 100));
+  const barColor = {
+    joy: 'bg-yellow-400/60', curiosity: 'bg-cyan-400/60', anxiety: 'bg-red-400/60',
+    pride: 'bg-amber-400/60', grief: 'bg-blue-400/60', wonder: 'bg-violet-400/60',
+  }[emotion] || 'bg-white/30';
+  return (
+    <div className="flex items-center gap-2">
+      <EIcon size={10} className={`${color} shrink-0`} />
+      <span className="text-[10px] text-white/50 w-14 capitalize">{emotion}</span>
+      <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-1000 ${barColor}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-[10px] text-white/30 w-8 text-right tabular-nums">{(value || 0).toFixed(2)}</span>
+    </div>
+  );
+}
+
+function ConsciousnessPanel({ consciousness }) {
+  if (!consciousness) {
+    return (
+      <div className="text-center py-8 text-white/25">
+        <Brain size={32} className="mx-auto mb-2 opacity-30" />
+        <p className="text-xs">Loading consciousness...</p>
+      </div>
+    );
+  }
+
+  const emo = consciousness.emotions || {};
+  const emotions = emo.emotions || {};
+  const thoughts = consciousness.recent_thoughts || [];
+  const memories = consciousness.recent_memories || [];
+  const coreMems = consciousness.core_memories || [];
+  const predStats = consciousness.prediction_stats || {};
+  const selfModel = consciousness.self_model || null;
+  const bias = consciousness.decision_bias || {};
+
+  return (
+    <div className="space-y-3">
+      {/* Mood Header */}
+      <div className="bg-violet-500/[0.08] rounded-lg border border-violet-500/15 p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Heart size={12} className="text-rose-400" />
+          <span className="text-[10px] text-white/40 uppercase tracking-widest">Emotional State</span>
+          <span className={`ml-auto text-xs font-medium capitalize ${EMOTION_COLORS[emo.dominant] || 'text-white/60'}`}>
+            {emo.mood || 'neutral'}
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          {['joy', 'curiosity', 'anxiety', 'pride', 'grief', 'wonder'].map(e => (
+            <EmotionBar key={e} emotion={e} value={emotions[e]} />
+          ))}
+        </div>
+        {/* Decision bias */}
+        <div className="mt-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(bias).map(([k, v]) => (
+              <span key={k} className={`text-[9px] px-1.5 py-0.5 rounded-full ${v > 0.5 ? 'bg-white/10 text-white/60' : 'bg-white/[0.04] text-white/30'}`}>
+                {k}: {(v * 100).toFixed(0)}%
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Inner Thoughts */}
+      <div className="bg-indigo-500/[0.06] rounded-lg border border-indigo-500/15 p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <MessageCircle size={12} className="text-violet-400" />
+          <span className="text-[10px] text-white/40 uppercase tracking-widest">Inner Voice</span>
+        </div>
+        {thoughts.length === 0 ? (
+          <p className="text-xs text-white/30 italic">The mind is quiet...</p>
+        ) : (
+          <div className="space-y-1.5">
+            {thoughts.slice(-5).map((t) => {
+              const style = THOUGHT_TYPE_STYLES[t.type] || { icon: Brain, color: 'text-white/50' };
+              const TIcon = style.icon;
+              return (
+                <div key={t.id} className="flex items-start gap-1.5">
+                  <TIcon size={10} className={`${style.color} mt-0.5 shrink-0`} />
+                  <p className="text-[11px] text-white/70 leading-relaxed italic">"{t.content}"</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Memories */}
+      <div className="bg-amber-500/[0.06] rounded-lg border border-amber-500/15 p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <BookOpen size={12} className="text-amber-400" />
+          <span className="text-[10px] text-white/40 uppercase tracking-widest">Memories</span>
+          {coreMems.length > 0 && (
+            <span className="ml-auto text-[9px] text-yellow-400/60">{coreMems.length} core</span>
+          )}
+        </div>
+        {memories.length === 0 && coreMems.length === 0 ? (
+          <p className="text-xs text-white/30 italic">No memories yet...</p>
+        ) : (
+          <div className="space-y-1.5">
+            {coreMems.slice(0, 3).map((m, i) => (
+              <div key={i} className="flex items-start gap-1.5">
+                <Star size={10} className="text-yellow-400 mt-0.5 shrink-0" />
+                <p className="text-[11px] text-yellow-200/70 leading-relaxed">{m.narrative}</p>
+              </div>
+            ))}
+            {memories.slice(-3).map((m) => (
+              <div key={m.id} className="flex items-start gap-1.5">
+                <BookOpen size={10} className={`${m.valence > 0 ? 'text-green-400' : m.valence < 0 ? 'text-red-400' : 'text-white/40'} mt-0.5 shrink-0`} />
+                <p className="text-[11px] text-white/60 leading-relaxed">{m.narrative}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Predictions */}
+      <div className="bg-cyan-500/[0.06] rounded-lg border border-cyan-500/15 p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Target size={12} className="text-cyan-400" />
+          <span className="text-[10px] text-white/40 uppercase tracking-widest">Predictions</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div>
+            <div className="text-sm font-bold text-white/80 tabular-nums">{predStats.total_predictions || 0}</div>
+            <div className="text-[9px] text-white/30">Total</div>
+          </div>
+          <div>
+            <div className="text-sm font-bold text-white/80 tabular-nums">{((predStats.accuracy || 0) * 100).toFixed(0)}%</div>
+            <div className="text-[9px] text-white/30">Accuracy</div>
+          </div>
+          <div>
+            <div className="text-sm font-bold text-white/80 tabular-nums">{((predStats.average_surprise || 0) * 100).toFixed(0)}%</div>
+            <div className="text-[9px] text-white/30">Surprise</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Self-Model / Identity */}
+      {selfModel && selfModel.identity_narrative && (
+        <div className="bg-purple-500/[0.06] rounded-lg border border-purple-500/15 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <User size={12} className="text-purple-400" />
+            <span className="text-[10px] text-white/40 uppercase tracking-widest">Identity</span>
+          </div>
+          <p className="text-[11px] text-white/70 leading-relaxed italic mb-2">"{selfModel.identity_narrative}"</p>
+          {selfModel.personality_traits && (
+            <div className="flex flex-wrap gap-1">
+              {Object.entries(selfModel.personality_traits)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 5)
+                .map(([trait, val]) => (
+                  <span key={trait} className={`text-[9px] px-1.5 py-0.5 rounded-full ${val > 0.5 ? 'bg-purple-500/20 text-purple-300' : 'bg-white/[0.04] text-white/30'}`}>
+                    {trait}: {(val * 100).toFixed(0)}%
+                  </span>
+                ))
+              }
+            </div>
+          )}
+          {selfModel.bias_warnings && selfModel.bias_warnings.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-white/[0.06]">
+              <div className="flex items-center gap-1 mb-1">
+                <AlertTriangle size={10} className="text-orange-400" />
+                <span className="text-[9px] text-orange-400/60 uppercase">Biases Detected</span>
+              </div>
+              {selfModel.bias_warnings.slice(0, 2).map((b, i) => (
+                <p key={i} className="text-[10px] text-orange-300/50 leading-relaxed">{b}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Main App
 // ══════════════════════════════════════════════════════════════════
@@ -351,6 +566,7 @@ function AppInner() {
   const [toasts, setToasts] = useState([]);
   const [seedFilter, setSeedFilter] = useState('');
   const [seedStatusFilter, setSeedStatusFilter] = useState('all');
+  const [consciousness, setConsciousness] = useState(null);
   const plantInputRef = useRef(null);
   const toastIdRef = useRef(0);
 
@@ -376,6 +592,13 @@ function AppInner() {
     } catch (e) { console.error('Refresh failed:', e); }
   }, []);
 
+  const refreshConsciousness = useCallback(async () => {
+    try {
+      const c = await api.getConsciousness();
+      setConsciousness(c);
+    } catch (e) { console.error('Consciousness fetch failed:', e); }
+  }, []);
+
   useEffect(() => { refreshRef.current = refresh; }, [refresh]);
 
   const debouncedRefresh = useCallback(() => {
@@ -398,7 +621,7 @@ function AppInner() {
     if (data.event === 'thinking') {
       setThinkingEvents((prev) => [...prev.slice(-199), data]);
     }
-    const autoEvents = ['auto_harvest', 'auto_compost', 'auto_promote', 'auto_dream_planted', 'auto_pulse', 'season_change', 'agent_spawned', 'agent_completed', 'agent_retired'];
+    const autoEvents = ['auto_harvest', 'auto_compost', 'auto_promote', 'auto_dream_planted', 'auto_pulse', 'season_change', 'agent_spawned', 'agent_completed', 'agent_retired', 'inner_thought', 'emotional_shift', 'core_memory_formed', 'high_surprise', 'self_model_updated', 'identity_update'];
     if (autoEvents.includes(data.event)) {
       debouncedRefresh();
       addToast(data.event, data.data);
@@ -599,13 +822,13 @@ function AppInner() {
 
           {/* Tabs */}
           <div className="flex bg-white/[0.02] border-b border-white/[0.06]">
-            {['garden', 'dreams', 'live'].map((t) => (
+            {['garden', 'mind', 'dreams', 'live'].map((t) => (
               <button
                 key={t}
-                onClick={() => { setTab(t); if (t === 'dreams') handleLoadDreams(); }}
+                onClick={() => { setTab(t); if (t === 'dreams') handleLoadDreams(); if (t === 'mind') refreshConsciousness(); }}
                 className={`flex-1 py-2 text-[11px] font-medium transition-all capitalize ${tab === t ? 'text-white/90 bg-white/[0.06] border-b-2 border-white/30' : 'text-white/35 hover:text-white/55'}`}
               >
-                {t === 'live' ? 'Live' : t}
+                {t === 'mind' ? '🧠 Mind' : t === 'live' ? 'Live' : t}
               </button>
             ))}
           </div>
@@ -666,6 +889,8 @@ function AppInner() {
                 {dreams.map((d) => <DreamCard key={d.id} dream={d} />)}
               </>
             )}
+
+            {tab === 'mind' && <ConsciousnessPanel consciousness={consciousness} />}
 
             {tab === 'live' && <LiveFeed events={events} />}
           </div>

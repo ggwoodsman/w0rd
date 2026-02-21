@@ -62,4 +62,12 @@ export const api = {
       body: JSON.stringify({ approved }),
     }),
   retireAgent: (id) => request(`/agents/${id}/retire`, { method: 'POST' }),
+
+  // Consciousness
+  getConsciousness: () => request('/consciousness'),
+  getEmotions: () => request('/consciousness/emotions'),
+  getThoughts: (limit = 20) => request(`/consciousness/thoughts?limit=${limit}`),
+  getMemories: (limit = 20) => request(`/consciousness/memories?limit=${limit}`),
+  getPredictions: () => request('/consciousness/predictions'),
+  getSelfModel: () => request('/consciousness/self'),
 };

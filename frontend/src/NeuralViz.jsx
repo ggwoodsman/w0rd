@@ -8,21 +8,29 @@ const SEASON_PALETTES = {
     intent: '#00ff88', fractal: '#22ff66', dreaming: '#44ffaa',
     consciousness: '#00ffcc', cortex: '#00ff55', ethics: '#66ff99',
     energy: '#33ff77', healing: '#88ffbb', symbiosis: '#00cc66',
+    emotions: '#ff66aa', inner_voice: '#cc88ff', memory: '#ffaa44',
+    prediction: '#44ddff', self_model: '#dd88ff',
   },
   summer: {
     intent: '#ffcc00', fractal: '#ff9900', dreaming: '#ffdd33',
     consciousness: '#ffee55', cortex: '#ff6600', ethics: '#ff8833',
     energy: '#ffbb00', healing: '#ffee66', symbiosis: '#ff4400',
+    emotions: '#ff4488', inner_voice: '#bb66ff', memory: '#ff8800',
+    prediction: '#22bbee', self_model: '#cc55ff',
   },
   autumn: {
     intent: '#ff6600', fractal: '#ff2222', dreaming: '#ff8833',
     consciousness: '#ffaa00', cortex: '#ee0000', ethics: '#ff5555',
     energy: '#ff4400', healing: '#ffaa55', symbiosis: '#cc0000',
+    emotions: '#ff3366', inner_voice: '#aa44ff', memory: '#ff6600',
+    prediction: '#1199dd', self_model: '#bb33ff',
   },
   winter: {
     intent: '#44aaff', fractal: '#7777ff', dreaming: '#aa88ff',
     consciousness: '#66ccff', cortex: '#2288ff', ethics: '#5555ff',
     energy: '#22ccff', healing: '#bb99ff', symbiosis: '#0044ff',
+    emotions: '#ff88cc', inner_voice: '#dd99ff', memory: '#ffbb66',
+    prediction: '#66eeff', self_model: '#ee99ff',
   },
 };
 
@@ -41,6 +49,12 @@ const ORGAN_3D = {
   energy:        { x: -0.9, y: -0.8, z: 0.5 },
   healing:       { x: 0.9, y: -0.8, z: 0.5 },
   symbiosis:     { x: 0, y: -1.2, z: -0.2 },
+  // Consciousness layer — outer ring above
+  emotions:      { x: -0.5, y: 1.6, z: 0.3 },
+  inner_voice:   { x: 0.5, y: 1.6, z: 0.3 },
+  memory:        { x: -1.0, y: 1.4, z: -0.2 },
+  prediction:    { x: 1.0, y: 1.4, z: -0.2 },
+  self_model:    { x: 0, y: 1.8, z: -0.1 },
 };
 
 const CONNECTIONS = [
@@ -50,6 +64,14 @@ const CONNECTIONS = [
   ['intent', 'fractal'], ['fractal', 'ethics'], ['ethics', 'energy'],
   ['energy', 'symbiosis'], ['symbiosis', 'healing'], ['healing', 'dreaming'],
   ['dreaming', 'consciousness'], ['intent', 'consciousness'],
+  // Consciousness layer connections
+  ['consciousness', 'emotions'], ['consciousness', 'inner_voice'],
+  ['consciousness', 'memory'], ['consciousness', 'prediction'],
+  ['consciousness', 'self_model'],
+  ['emotions', 'inner_voice'], ['emotions', 'memory'],
+  ['inner_voice', 'memory'], ['prediction', 'self_model'],
+  ['memory', 'self_model'], ['prediction', 'inner_voice'],
+  ['dreaming', 'memory'], ['emotions', 'self_model'],
 ];
 
 // Agent type → base color (will be tinted by season)
