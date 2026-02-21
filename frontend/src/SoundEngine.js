@@ -188,7 +188,7 @@ export function isMuted() { return _muted; }
 
 const _throttleMap = {};
 
-export function sfxPulseThrottled(freq = 440, key = 'default', cooldownMs = 3000) {
+export function sfxPulseThrottled(freq = 440, key = 'default', cooldownMs = 500) {
   const t = Date.now();
   if (_throttleMap[key] && t - _throttleMap[key] < cooldownMs) return;
   _throttleMap[key] = t;
