@@ -248,12 +248,14 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
       st.lastMouse = null;
     };
 
-    // Touch support
+    // Touch support (with dragMoved tracking for tap-to-select)
     const onTouchStart = (e) => {
       const t = e.touches[0];
       const st = stateRef.current;
       st.dragging = true;
+      st.dragMoved = false;
       st.lastMouse = { x: t.clientX, y: t.clientY };
+      st.touchStart = { x: t.clientX, y: t.clientY };
     };
     const onTouchMove = (e) => {
       e.preventDefault();
@@ -262,6 +264,7 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
       if (!st.dragging || !st.lastMouse) return;
       const dx = t.clientX - st.lastMouse.x;
       const dy = t.clientY - st.lastMouse.y;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) st.dragMoved = true;
       st.rotY += dx * 0.005;
       st.rotX += dy * 0.005;
       st.rotX = Math.max(-1.2, Math.min(1.2, st.rotX));
@@ -269,8 +272,22 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
     };
     const onTouchEnd = () => {
       const st = stateRef.current;
+      if (!st.dragMoved && st.touchStart && onNodeSelectRef.current) {
+        const rect = canvas.getBoundingClientRect();
+        const mx = st.touchStart.x - rect.left;
+        const my = st.touchStart.y - rect.top;
+        let hit = null;
+        let bestDist = 40;
+        for (const p of st.lastProjected || []) {
+          const ddx = mx - p.sx, ddy = my - p.sy;
+          const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+          if (dist < bestDist) { bestDist = dist; hit = p; }
+        }
+        onNodeSelectRef.current(hit ? { key: hit.key, node: hit.node, sx: hit.sx, sy: hit.sy } : null);
+      }
       st.dragging = false;
       st.lastMouse = null;
+      st.touchStart = null;
     };
 
     canvas.addEventListener('mousedown', onMouseDown);

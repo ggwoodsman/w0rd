@@ -20,6 +20,25 @@ logger = logging.getLogger("w0rd.llm")
 OLLAMA_BASE = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "qwen3:8b"
 
+# Persistent HTTP client for connection pooling
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Get or create the persistent HTTP client."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=120.0)
+    return _http_client
+
+
+async def shutdown_llm_client() -> None:
+    """Close the persistent HTTP client on shutdown."""
+    global _http_client
+    if _http_client and not _http_client.is_closed:
+        await _http_client.aclose()
+        _http_client = None
+
 
 class ThinkingEvent:
     """A single unit of thought — streamed to the frontend."""
@@ -101,41 +120,41 @@ async def generate(
     full_response = ""
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            payload = {
-                "model": model,
-                "prompt": prompt,
-                "stream": True,
-                "options": {
-                    "temperature": temperature,
-                    "num_predict": max_tokens,
-                },
-            }
-            if system:
-                payload["system"] = system
+        client = _get_client()
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": True,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+        if system:
+            payload["system"] = system
 
-            async with client.stream(
-                "POST", f"{OLLAMA_BASE}/api/generate", json=payload
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.strip():
-                        continue
-                    try:
-                        chunk = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+        async with client.stream(
+            "POST", f"{OLLAMA_BASE}/api/generate", json=payload
+        ) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
-                    token = chunk.get("response", "")
-                    if token:
-                        full_response += token
-                        await _emit_thinking(ThinkingEvent(
-                            organ=organ, phase=phase,
-                            token=token, content=full_response,
-                        ))
+                token = chunk.get("response", "")
+                if token:
+                    full_response += token
+                    await _emit_thinking(ThinkingEvent(
+                        organ=organ, phase=phase,
+                        token=token, content=full_response,
+                    ))
 
-                    if chunk.get("done", False):
-                        break
+                if chunk.get("done", False):
+                    break
 
     except httpx.ConnectError:
         logger.warning("Ollama not reachable at %s — falling back to template", OLLAMA_BASE)
@@ -193,7 +212,12 @@ async def generate_json(
             start = raw.index("```") + 3
             end = raw.index("```", start)
             return json.loads(raw[start:end].strip())
-        return json.loads(raw)
+        # Try stripping <think>...</think> blocks (qwen3 reasoning)
+        cleaned = raw
+        if "<think>" in cleaned:
+            import re as _re
+            cleaned = _re.sub(r"<think>.*?</think>", "", cleaned, flags=_re.DOTALL).strip()
+        return json.loads(cleaned)
     except (json.JSONDecodeError, ValueError):
         logger.debug("Failed to parse JSON from LLM response: %s", raw[:200])
         return None
@@ -202,11 +226,11 @@ async def generate_json(
 async def check_ollama() -> dict:
     """Check if Ollama is running and which models are available."""
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{OLLAMA_BASE}/api/tags")
-            resp.raise_for_status()
-            data = resp.json()
-            models = [m["name"] for m in data.get("models", [])]
-            return {"status": "online", "models": models}
+        client = _get_client()
+        resp = await client.get(f"{OLLAMA_BASE}/api/tags", timeout=5.0)
+        resp.raise_for_status()
+        data = resp.json()
+        models = [m["name"] for m in data.get("models", [])]
+        return {"status": "online", "models": models}
     except Exception as e:
         return {"status": "offline", "error": str(e), "models": []}

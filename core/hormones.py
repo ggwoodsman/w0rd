@@ -12,6 +12,7 @@ import asyncio
 import logging
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Coroutine
@@ -53,7 +54,7 @@ class HormoneBus:
     def __init__(self, max_cascade_depth: int = 8):
         self._subscribers: dict[str, list[HormoneCallback]] = {}
         self._slow_release_queue: asyncio.Queue[Hormone] = asyncio.Queue()
-        self._history: list[Hormone] = []
+        self._history: deque[Hormone] = deque(maxlen=1000)
         self._max_depth = max_cascade_depth
         self._running = False
         self._flush_task: asyncio.Task | None = None

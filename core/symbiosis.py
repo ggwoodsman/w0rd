@@ -67,6 +67,7 @@ class MycelialNetwork:
         """
         Scan all living seeds for potential symbiotic connections.
         Creates links where similarity exceeds threshold.
+        Preloads existing links to avoid N+1 queries.
         """
         result = await session.execute(
             select(Seed).where(Seed.is_composted == False)
@@ -75,20 +76,21 @@ class MycelialNetwork:
         if len(seeds) < 2:
             return []
 
+        # Preload all existing link pairs into a set for O(1) lookup
+        existing_result = await session.execute(select(SymbioticLink))
+        existing_pairs: set[tuple[str, str]] = set()
+        for link in existing_result.scalars().all():
+            existing_pairs.add((link.sprout_a_id, link.sprout_b_id))
+            existing_pairs.add((link.sprout_b_id, link.sprout_a_id))
+
         new_links: list[SymbioticLink] = []
 
         for i in range(len(seeds)):
             for j in range(i + 1, len(seeds)):
                 seed_a, seed_b = seeds[i], seeds[j]
 
-                # Check if link already exists
-                existing = await session.execute(
-                    select(SymbioticLink).where(
-                        ((SymbioticLink.sprout_a_id == seed_a.id) & (SymbioticLink.sprout_b_id == seed_b.id)) |
-                        ((SymbioticLink.sprout_a_id == seed_b.id) & (SymbioticLink.sprout_b_id == seed_a.id))
-                    )
-                )
-                if existing.scalar_one_or_none():
+                # O(1) check against preloaded set
+                if (seed_a.id, seed_b.id) in existing_pairs:
                     continue
 
                 # Calculate synergy from embeddings and themes
@@ -111,6 +113,8 @@ class MycelialNetwork:
                     )
                     session.add(link)
                     new_links.append(link)
+                    existing_pairs.add((seed_a.id, seed_b.id))
+                    existing_pairs.add((seed_b.id, seed_a.id))
 
         await session.flush()
 
@@ -199,18 +203,25 @@ class MycelialNetwork:
     async def share_nutrients(self, session: AsyncSession) -> float:
         """
         Flow surplus energy along symbiotic links weighted by synergy_score.
+        Preloads all seeds into a dict to avoid N+1 queries.
         Returns total energy transferred.
         """
         result = await session.execute(select(SymbioticLink))
         links = list(result.scalars().all())
+        if not links:
+            return 0.0
+
+        # Preload all living seeds into a dict for O(1) lookup
+        seed_result = await session.execute(
+            select(Seed).where(Seed.is_composted == False)
+        )
+        seed_map: dict[str, Seed] = {s.id: s for s in seed_result.scalars().all()}
+
         total_transferred = 0.0
 
         for link in links:
-            # Load both endpoints (using seed IDs stored in sprout_a/b fields)
-            result_a = await session.execute(select(Seed).where(Seed.id == link.sprout_a_id))
-            result_b = await session.execute(select(Seed).where(Seed.id == link.sprout_b_id))
-            seed_a = result_a.scalar_one_or_none()
-            seed_b = result_b.scalar_one_or_none()
+            seed_a = seed_map.get(link.sprout_a_id)
+            seed_b = seed_map.get(link.sprout_b_id)
 
             if not seed_a or not seed_b:
                 continue

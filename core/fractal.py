@@ -156,15 +156,13 @@ class VascularGrower:
         available_energy = seed.energy
 
         # Grow the tree level by level
-        parent_ids: list[str | None] = [None]  # root level has no parent
-        parent_energies: list[float] = [available_energy]
+        parents: list[tuple[str | None, float]] = [(None, available_energy)]  # (parent_id, energy)
 
         for depth in range(min(self.max_depth + 1, len(pattern))):
             level_descriptions = pattern[depth] if depth < len(pattern) else ["Continue growing"]
-            next_parent_ids: list[str] = []
-            next_parent_energies: list[float] = []
+            level_sprouts: list[tuple[Sprout, float]] = []  # (sprout, child_energy)
 
-            for parent_idx, (parent_id, parent_energy) in enumerate(zip(parent_ids, parent_energies)):
+            for parent_id, parent_energy in parents:
                 # Energy cost for this depth level
                 depth_cost = PHI ** depth
                 if parent_energy < depth_cost:
@@ -190,17 +188,15 @@ class VascularGrower:
                         status="budding",
                     )
                     session.add(sprout)
-                    await session.flush()
-
                     all_sprouts.append(sprout)
-                    next_parent_ids.append(sprout.id)
-                    next_parent_energies.append(child_energy)
+                    level_sprouts.append((sprout, child_energy))
 
-            parent_ids = next_parent_ids
-            parent_energies = next_parent_energies
-
-            if not parent_ids:
+            if not level_sprouts:
                 break  # No energy left to grow deeper
+
+            # Flush once per level so IDs are generated for next level's parent_id
+            await session.flush()
+            parents = [(s.id, e) for s, e in level_sprouts]
 
         # Update seed status
         seed.status = "growing"

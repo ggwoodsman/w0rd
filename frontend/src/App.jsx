@@ -1,7 +1,103 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Sprout, Sun, Cloud, Snowflake, Heart, Brain, Zap, TreePine, Flower2, Activity, Send, ChevronDown, ChevronUp, Sparkles, Shield, Bug, Cpu, Radio, X, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, Component } from 'react';
+import { Sprout, Sun, Cloud, Snowflake, Heart, Brain, Zap, TreePine, Flower2, Activity, Send, ChevronDown, ChevronUp, Sparkles, Shield, Bug, Cpu, Radio, X, PanelRightOpen, PanelRightClose, Search, Bell, Check, XCircle, Filter } from 'lucide-react';
 import { api } from './api';
 import NeuralViz from './NeuralViz';
+
+// ── Error Boundary ──────────────────────────────────────────────
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, info) { console.error('ErrorBoundary caught:', error, info); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 bg-black flex items-center justify-center">
+          <div className="text-center max-w-md p-8">
+            <Bug size={48} className="text-red-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
+            <p className="text-white/50 text-sm mb-4">{this.state.error?.message || 'Unknown error'}</p>
+            <button onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm transition-colors">Reload</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ── WebSocket with reconnection ─────────────────────────────────
+function useReconnectingWebSocket(path, onMessage, deps = []) {
+  const wsRef = useRef(null);
+  const retryRef = useRef(1);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    let timer = null;
+
+    function connect() {
+      if (!mountedRef.current) return;
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${proto}//${window.location.host}${path}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log(`WS ${path} connected`);
+        retryRef.current = 1;
+      };
+      ws.onmessage = (e) => {
+        try { onMessage(JSON.parse(e.data)); } catch { /* ignored */ }
+      };
+      ws.onclose = () => {
+        if (!mountedRef.current) return;
+        const delay = Math.min(retryRef.current * 1000, 15000);
+        console.log(`WS ${path} closed, reconnecting in ${delay}ms`);
+        retryRef.current = Math.min(retryRef.current * 2, 15);
+        timer = setTimeout(connect, delay);
+      };
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timer);
+      wsRef.current?.close();
+    };
+  }, deps);
+
+  return wsRef;
+}
+
+// ── Toast Notification System ───────────────────────────────────
+const TOAST_MESSAGES = {
+  auto_harvest: (d) => `Seed harvested: ${d?.essence?.slice(0, 40) || 'fulfilled'}`,
+  auto_compost: (d) => `Seed composted: ${d?.essence?.slice(0, 40) || 'retired'}`,
+  auto_dream_planted: () => `Dream planted as seed`,
+  agent_spawned: (d) => `Agent spawned: ${d?.name || 'new agent'}`,
+  agent_completed: (d) => `Agent completed: ${d?.name || 'agent'}`,
+  season_change: (d) => `Season changed: ${d?.old_season} → ${d?.new_season}`,
+  wisdom_milestone: (d) => `Wisdom milestone: ${d?.completed_seeds} seeds completed`,
+};
+
+function Toasts({ toasts, onDismiss }) {
+  return (
+    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none">
+      {toasts.map((t) => {
+        const style = EVENT_STYLES[t.event] || { icon: Zap, color: 'text-white/60' };
+        const TIcon = style.icon;
+        return (
+          <div key={t.id} className="pointer-events-auto bg-black/70 backdrop-blur-xl rounded-xl border border-white/10 px-4 py-2.5 shadow-2xl flex items-center gap-2.5 animate-[slideDown_0.3s_ease-out] min-w-[200px] max-w-[400px]">
+            <TIcon size={14} className={`${style.color} shrink-0`} />
+            <span className="text-xs text-white/80 flex-1">{t.message}</span>
+            <button onClick={() => onDismiss(t.id)} className="text-white/30 hover:text-white/60 shrink-0"><X size={12} /></button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const SEASON_ICONS = { spring: Flower2, summer: Sun, autumn: Cloud, winter: Snowflake };
 const SEASON_BG = {
@@ -140,17 +236,21 @@ const ORGAN_DESCRIPTIONS = {
   symbiosis: 'Mycelial network — links related seeds and shares nutrients',
 };
 
-function NodePopup({ info, onClose, agents }) {
+function NodePopup({ info, onClose, agents, onApprove, onRetire }) {
   if (!info) return null;
   const { key, node, sx, sy } = info;
   const isAgent = key.startsWith('agent_');
   const agentId = isAgent ? key.replace('agent_', '') : null;
   const agentData = isAgent ? agents.find(a => a.id === agentId) : null;
 
+  // Clamp position to viewport
+  const popupLeft = Math.min(Math.max(sx, 160), (typeof window !== 'undefined' ? window.innerWidth : 800) - 160);
+  const popupTop = Math.max(sy - 10, 60);
+
   return (
     <div
       className="absolute z-50 pointer-events-auto"
-      style={{ left: Math.min(sx, window.innerWidth - 300), top: Math.max(sy - 10, 60), transform: 'translate(-50%, -100%)' }}
+      style={{ left: popupLeft, top: popupTop, transform: 'translate(-50%, -100%)' }}
     >
       <div className="bg-black/80 backdrop-blur-xl rounded-xl border border-white/15 p-4 shadow-2xl shadow-black/50 min-w-[240px] max-w-[320px]">
         <div className="flex items-center justify-between mb-2">
@@ -178,6 +278,29 @@ function NodePopup({ info, onClose, agents }) {
               <span className="text-[10px] text-white/40">{agentData.agent_type}</span>
             </div>
             <p className="text-xs text-white/60 leading-relaxed mb-2">{agentData.task_description}</p>
+
+            {/* Agent approval buttons */}
+            {agentData.status === 'awaiting_approval' && (
+              <div className="flex gap-2 mb-2">
+                <button onClick={() => onApprove(agentData.id, true)}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/30 text-green-300 text-xs font-medium transition-colors border border-green-500/20">
+                  <Check size={12} /> Approve
+                </button>
+                <button onClick={() => onApprove(agentData.id, false)}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-medium transition-colors border border-red-500/20">
+                  <XCircle size={12} /> Deny
+                </button>
+              </div>
+            )}
+
+            {/* Retire button for active agents */}
+            {['idle', 'working', 'completed'].includes(agentData.status) && (
+              <button onClick={() => onRetire(agentData.id)}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60 text-xs transition-colors border border-white/5 mb-2">
+                Retire Agent
+              </button>
+            )}
+
             {agentData.result && (
               <div className="bg-white/[0.04] rounded p-2 mt-2 max-h-32 overflow-y-auto scrollbar-thin">
                 <p className="text-[10px] text-white/50 uppercase tracking-wider mb-1">Result</p>
@@ -205,7 +328,7 @@ function NodePopup({ info, onClose, agents }) {
 // Main App
 // ══════════════════════════════════════════════════════════════════
 
-export default function App() {
+function AppInner() {
   const [garden, setGarden] = useState(null);
   const [pulse, setPulse] = useState(null);
   const [dreams, setDreams] = useState([]);
@@ -216,14 +339,30 @@ export default function App() {
   const [tab, setTab] = useState('garden');
   const [panelOpen, setPanelOpen] = useState(true);
   const [selectedNode, setSelectedNode] = useState(null);
-  const wsRef = useRef(null);
-  const thinkingWsRef = useRef(null);
   const refreshRef = useRef(null);
   const refreshTimerRef = useRef(null);
   const [thinkingEvents, setThinkingEvents] = useState([]);
   const [ollamaStatus, setOllamaStatus] = useState(null);
   const [lifecycleStatus, setLifecycleStatus] = useState(null);
   const [agents, setAgents] = useState([]);
+  const [toasts, setToasts] = useState([]);
+  const [seedFilter, setSeedFilter] = useState('');
+  const [seedStatusFilter, setSeedStatusFilter] = useState('all');
+  const plantInputRef = useRef(null);
+  const toastIdRef = useRef(0);
+
+  // ── Toast helpers ──
+  const addToast = useCallback((event, data) => {
+    const msgFn = TOAST_MESSAGES[event];
+    if (!msgFn) return;
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev.slice(-4), { id, event, message: msgFn(data) }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -250,42 +389,26 @@ export default function App() {
     return () => { clearTimeout(id); clearInterval(interval); };
   }, [refresh]);
 
-  useEffect(() => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${window.location.host}/ws/garden`);
-    ws.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setEvents((prev) => [...prev.slice(-99), data]);
-        if (data.event === 'thinking') {
-          setThinkingEvents((prev) => [...prev.slice(-199), data]);
-        }
-        const autoEvents = ['auto_harvest', 'auto_compost', 'auto_promote', 'auto_dream_planted', 'auto_pulse', 'season_change', 'agent_spawned', 'agent_completed', 'agent_retired'];
-        if (autoEvents.includes(data.event)) {
-          debouncedRefresh();
-        }
-      } catch { /* ignored */ }
-    };
-    ws.onopen = () => console.log('Garden WS connected');
-    ws.onclose = () => setTimeout(() => {}, 3000);
-    wsRef.current = ws;
-    return () => ws.close();
-  }, [debouncedRefresh]);
+  // ── WebSocket with reconnection ──
+  const gardenWsHandler = useCallback((data) => {
+    setEvents((prev) => [...prev.slice(-99), data]);
+    if (data.event === 'thinking') {
+      setThinkingEvents((prev) => [...prev.slice(-199), data]);
+    }
+    const autoEvents = ['auto_harvest', 'auto_compost', 'auto_promote', 'auto_dream_planted', 'auto_pulse', 'season_change', 'agent_spawned', 'agent_completed', 'agent_retired'];
+    if (autoEvents.includes(data.event)) {
+      debouncedRefresh();
+      addToast(data.event, data.data);
+    }
+  }, [debouncedRefresh, addToast]);
 
-  useEffect(() => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${window.location.host}/ws/thinking`);
-    ws.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setThinkingEvents((prev) => [...prev.slice(-199), data]);
-      } catch { /* ignored */ }
-    };
-    ws.onopen = () => console.log('Thinking WS connected');
-    ws.onclose = () => setTimeout(() => {}, 3000);
-    thinkingWsRef.current = ws;
-    return () => ws.close();
+  useReconnectingWebSocket('/ws/garden', gardenWsHandler, [gardenWsHandler]);
+
+  const thinkingWsHandler = useCallback((data) => {
+    setThinkingEvents((prev) => [...prev.slice(-199), data]);
   }, []);
+
+  useReconnectingWebSocket('/ws/thinking', thinkingWsHandler, [thinkingWsHandler]);
 
   useEffect(() => {
     const check = () => {
@@ -296,6 +419,25 @@ export default function App() {
     const interval = setInterval(check, 30000);
     return () => { clearTimeout(id); clearInterval(interval); };
   }, []);
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    const handler = (e) => {
+      // Esc: close popup/panel
+      if (e.key === 'Escape') {
+        if (selectedNode) { setSelectedNode(null); return; }
+        setPanelOpen(false);
+      }
+      // Don't trigger shortcuts when typing in input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      // Space: toggle panel
+      if (e.key === ' ') { e.preventDefault(); setPanelOpen(p => !p); }
+      // /: focus plant input
+      if (e.key === '/') { e.preventDefault(); plantInputRef.current?.focus(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedNode]);
 
   const handlePlant = async () => {
     if (!wish.trim()) return;
@@ -316,6 +458,35 @@ export default function App() {
     setSelectedNode(info);
   }, []);
 
+  const handleApproveAgent = useCallback(async (agentId, approved) => {
+    try {
+      await api.approveAgent(agentId, approved);
+      await refresh();
+      setSelectedNode(null);
+    } catch (e) { console.error('Approve failed:', e); }
+  }, [refresh]);
+
+  const handleRetireAgent = useCallback(async (agentId) => {
+    try {
+      await api.retireAgent(agentId);
+      await refresh();
+      setSelectedNode(null);
+    } catch (e) { console.error('Retire failed:', e); }
+  }, [refresh]);
+
+  // ── Derived data ──
+  const awaitingApproval = agents.filter(a => a.status === 'awaiting_approval');
+
+  const filteredSeeds = (garden?.seeds || []).filter(seed => {
+    if (seedStatusFilter !== 'all' && seed.status !== seedStatusFilter) return false;
+    if (seedFilter) {
+      const q = seedFilter.toLowerCase();
+      const text = `${seed.essence || ''} ${seed.raw_text || ''} ${(seed.themes || []).join(' ')}`.toLowerCase();
+      if (!text.includes(q)) return false;
+    }
+    return true;
+  });
+
   const season = garden?.state?.season || 'spring';
   const SeasonIcon = SEASON_ICONS[season];
   const bgGradient = SEASON_BG[season];
@@ -329,8 +500,11 @@ export default function App() {
         <NeuralViz thinkingEvents={thinkingEvents} season={season} agents={agents} onNodeSelect={handleNodeSelect} />
       </div>
 
+      {/* ── Toasts ── */}
+      <Toasts toasts={toasts} onDismiss={dismissToast} />
+
       {/* ── Node Info Popup ── */}
-      <NodePopup info={selectedNode} onClose={() => setSelectedNode(null)} agents={agents} />
+      <NodePopup info={selectedNode} onClose={() => setSelectedNode(null)} agents={agents} onApprove={handleApproveAgent} onRetire={handleRetireAgent} />
 
       {/* ── Top Bar (floating) ── */}
       <header className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
@@ -344,6 +518,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Awaiting approval badge */}
+            {awaitingApproval.length > 0 && (
+              <div className="relative bg-amber-500/20 backdrop-blur-xl rounded-full px-3 py-1.5 border border-amber-500/30 shadow-lg shadow-black/30 flex items-center gap-1.5 animate-pulse" style={{ animationDuration: '2s' }}>
+                <Bell size={12} className="text-amber-400" />
+                <span className="text-[10px] text-amber-300 font-medium">{awaitingApproval.length} pending</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 bg-black/40 backdrop-blur-xl rounded-full px-3 py-1.5 border border-white/[0.08] shadow-lg shadow-black/30">
               <Cpu size={12} className={`${ollamaStatus?.status === 'online' ? 'text-green-400' : 'text-red-400'}`} />
               <div className="flex items-center gap-1.5">
@@ -417,13 +598,37 @@ export default function App() {
           <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
             {tab === 'garden' && (
               <>
-                {garden?.seeds?.length === 0 && (
+                {/* Search & filter bar */}
+                <div className="flex gap-1.5 mb-1">
+                  <div className="flex-1 relative">
+                    <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/25" />
+                    <input
+                      value={seedFilter}
+                      onChange={(e) => setSeedFilter(e.target.value)}
+                      placeholder="Search seeds..."
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-7 pr-2 py-1.5 text-[11px] text-white placeholder-white/25 focus:outline-none focus:border-white/20"
+                    />
+                  </div>
+                  <select
+                    value={seedStatusFilter}
+                    onChange={(e) => setSeedStatusFilter(e.target.value)}
+                    className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-[11px] text-white/60 focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="all">All</option>
+                    <option value="planted">Planted</option>
+                    <option value="growing">Growing</option>
+                    <option value="harvested">Harvested</option>
+                    <option value="composted">Composted</option>
+                  </select>
+                </div>
+
+                {filteredSeeds.length === 0 && (
                   <div className="text-center py-8 text-white/25">
                     <Sprout size={32} className="mx-auto mb-2 opacity-30" />
-                    <p className="text-xs">Plant a wish to begin</p>
+                    <p className="text-xs">{garden?.seeds?.length ? 'No matching seeds' : 'Plant a wish to begin'}</p>
                   </div>
                 )}
-                {garden?.seeds?.map((seed) => (
+                {filteredSeeds.map((seed) => (
                   <SeedCard
                     key={seed.id}
                     seed={seed}
@@ -456,10 +661,11 @@ export default function App() {
         <div className="flex justify-center px-4 pb-4 pointer-events-auto">
           <div className="flex gap-2 bg-black/50 backdrop-blur-2xl rounded-2xl border border-white/[0.08] p-2.5 shadow-2xl shadow-black/40 w-full max-w-xl">
             <input
+              ref={plantInputRef}
               value={wish}
               onChange={(e) => setWish(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handlePlant()}
-              placeholder="Plant a wish..."
+              placeholder="Plant a wish... (press / to focus)"
               className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-white/20 transition-all"
             />
             <button
@@ -473,5 +679,13 @@ export default function App() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
   );
 }

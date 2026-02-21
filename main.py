@@ -28,7 +28,7 @@ from core.gardener import GardenerOrgan
 from core.healing import ScarTissue
 from core.hormones import HormoneBus
 from core.intent import SeedListener
-from core.llm import ThinkingEvent, check_ollama, on_thinking
+from core.llm import ThinkingEvent, check_ollama, on_thinking, shutdown_llm_client
 from core.agents import AgentRegistry
 from core.autonomy import (
     evaluate_mission, plan_mission, reset_tick_budget,
@@ -423,6 +423,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
     await bus.stop()
+    await shutdown_llm_client()
     await shutdown_db()
     logger.info("The organism rests. The garden gate closes.")
 
@@ -694,9 +695,15 @@ async def get_ecosystem(session: AsyncSession = Depends(get_session)):
 
 @app.get("/pulse", response_model=PulseResponse, tags=["Ecosystem"])
 async def get_pulse(session: AsyncSession = Depends(get_session)):
-    """Feel the organism's heartbeat — self-awareness report."""
-    report = await consciousness.pulse(session)
-    await session.commit()
+    """Feel the organism's heartbeat — return the latest pulse report."""
+    result = await session.execute(
+        select(PulseReport).order_by(PulseReport.created_at.desc()).limit(1)
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        # No pulse yet — generate one
+        report = await consciousness.pulse(session)
+        await session.commit()
     return PulseResponse(
         id=report.id, cycle=report.cycle, summary=report.summary,
         thriving=json.loads(report.thriving),
@@ -771,10 +778,6 @@ async def get_soil_richness(session: AsyncSession = Depends(get_session)):
 @app.get("/mycelium", response_model=list[SymbioticLinkResponse], tags=["Underground"])
 async def get_mycelium(session: AsyncSession = Depends(get_session)):
     """Listen to the underground — view symbiotic links."""
-    # Trigger a scan first
-    await mycelium.scan_and_link(session)
-    await session.commit()
-
     result = await session.execute(select(SymbioticLink).order_by(SymbioticLink.created_at.desc()))
     links = list(result.scalars().all())
     return [
@@ -803,10 +806,6 @@ async def get_pollen_map(session: AsyncSession = Depends(get_session)):
 @app.get("/dreams", response_model=list[DreamResponse], tags=["Underground"])
 async def get_dreams(session: AsyncSession = Depends(get_session)):
     """Morning review — see what the garden dreamed."""
-    # Trigger a dream cycle
-    dream = await dreamer.dream(session)
-    await session.commit()
-
     result = await session.execute(
         select(Dream).order_by(Dream.created_at.desc()).limit(20)
     )

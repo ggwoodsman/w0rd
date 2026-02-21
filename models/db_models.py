@@ -15,6 +15,7 @@ from sqlalchemy import (
     Column,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -77,6 +78,13 @@ class Seed(Base):
     gardener = relationship("Gardener", back_populates="seeds")
     sprouts = relationship("Sprout", back_populates="seed", cascade="all, delete-orphan")
 
+    __table_args__ = (
+        Index("ix_seeds_status", "status"),
+        Index("ix_seeds_is_composted", "is_composted"),
+        Index("ix_seeds_status_composted", "status", "is_composted"),
+        Index("ix_seeds_gardener_id", "gardener_id"),
+    )
+
 
 # ── Sprout ────────────────────────────────────────────────────────
 
@@ -104,6 +112,11 @@ class Sprout(Base):
     seed = relationship("Seed", back_populates="sprouts")
     children = relationship("Sprout", backref="parent", remote_side=[id])
 
+    __table_args__ = (
+        Index("ix_sprouts_seed_id", "seed_id"),
+        Index("ix_sprouts_is_composted", "is_composted"),
+    )
+
 
 # ── Symbiotic Link ────────────────────────────────────────────────
 
@@ -111,13 +124,20 @@ class SymbioticLink(Base):
     __tablename__ = "symbiotic_links"
 
     id = Column(String, primary_key=True, default=_uid)
-    sprout_a_id = Column(String, ForeignKey("sprouts.id"), nullable=False)
-    sprout_b_id = Column(String, ForeignKey("sprouts.id"), nullable=False)
+    # NOTE: columns named sprout_*_id for legacy compat, but actually store seed IDs
+    sprout_a_id = Column(String, nullable=False)
+    sprout_b_id = Column(String, nullable=False)
     relationship_type = Column(String, default="mutualism")  # mutualism, commensalism, parasitism
     synergy_score = Column(Float, default=0.0)
     nutrient_flow = Column(Float, default=0.0)
     pollen_transferred = Column(Boolean, default=False)
     created_at = Column(Float, default=_now)
+
+    __table_args__ = (
+        Index("ix_symlinks_sprout_a", "sprout_a_id"),
+        Index("ix_symlinks_sprout_b", "sprout_b_id"),
+        Index("ix_symlinks_pair", "sprout_a_id", "sprout_b_id"),
+    )
 
 
 # ── Garden State (singleton-ish) ──────────────────────────────────
@@ -223,6 +243,12 @@ class AgentNode(Base):
     retired_at = Column(Float, nullable=True)
 
     children = relationship("AgentNode", backref="parent", remote_side=[id])
+
+    __table_args__ = (
+        Index("ix_agents_status", "status"),
+        Index("ix_agents_seed_id", "seed_id"),
+        Index("ix_agents_type", "agent_type"),
+    )
 
 
 # ── Hormone Log ───────────────────────────────────────────────────
