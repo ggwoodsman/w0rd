@@ -125,11 +125,6 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
   const organColors = getOrganColors(season);
   const [muted, setMuted] = useState(false);
   const prevSeasonRef = useRef(season);
-  const mutedRef = useRef(false);
-  const seasonRef = useRef(season);
-  useEffect(() => { mutedRef.current = muted; }, [muted]);
-  useEffect(() => { seasonRef.current = season; }, [season]);
-
   // Global one-time unlock on any user gesture
   useEffect(() => {
     let fired = false;
@@ -139,9 +134,6 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
       window.removeEventListener('click', unlockOnGesture);
       window.removeEventListener('keydown', unlockOnGesture);
       sfx.unlock();
-      if (!mutedRef.current && !sfx.isAmbientRunning()) {
-        sfx.startAmbient(seasonRef.current);
-      }
     };
     window.addEventListener('click', unlockOnGesture);
     window.addEventListener('keydown', unlockOnGesture);
@@ -202,19 +194,11 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
     st.agentNodes = {};
     st.inited = true;
 
-    // Season change: restart ambient with new season tone
+    // Season change sound
     if (prevSeasonRef.current !== season) {
       if (prevSeasonRef.current) sfx.sfxSeasonChange();
       prevSeasonRef.current = season;
-      if (sfx.isUnlocked() && !sfx.isAmbientRunning()) {
-        sfx.startAmbient(season);
-      } else if (sfx.isUnlocked() && sfx.isAmbientRunning()) {
-        sfx.stopAmbient();
-        sfx.startAmbient(season);
-      }
     }
-
-    // No cleanup — ambient lifecycle managed explicitly
   }, [organColors, season]);
 
   // ── Sync dynamic agent nodes ──
@@ -728,9 +712,6 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
     const next = !muted;
     setMuted(next);
     sfx.setMuted(next);
-    if (!next) {
-      sfx.startAmbient(season);
-    }
   };
 
   return (
