@@ -285,7 +285,7 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
       const st = stateRef.current;
       if (!st.inited) { animRef.current = requestAnimationFrame(animate); return; }
       const t = Date.now() * 0.001;
-      const cx = w / 2, cy = h / 2;
+      const cx = w / 2, cy = h / 2 + 30;
       const fov = 3.5;
 
       // Auto-rotate slowly when not dragging
@@ -559,7 +559,7 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
 
       {/* Thinking stream */}
       {activeTokens && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none">
+        <div className="absolute bottom-16 left-0 right-0 p-4 bg-gradient-to-t from-black/60 via-black/30 to-transparent pointer-events-none">
           <div className="flex items-start gap-2 max-w-xl">
             <Zap size={14} className="text-yellow-400 mt-0.5 shrink-0 animate-pulse drop-shadow-[0_0_6px_rgba(250,204,21,0.5)]" />
             <p className="text-xs text-white/70 font-mono leading-relaxed break-words">
