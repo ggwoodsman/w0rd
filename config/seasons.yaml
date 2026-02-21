@@ -1,0 +1,11 @@
+# Seasonal + Tidal Timing Configuration
+
+seasons:
+  order: ["spring", "summer", "autumn", "winter"]
+  # Duration in seconds (default: manual transition via API)
+  auto_transition: false
+  auto_duration_seconds: 3600  # 1 hour per season if auto enabled
+
+tidal:
+  period_seconds: 14400  # 4-hour ebb/flow cycle
+  amplitude: 0.5         # oscillation range: 1.0 +/- amplitude

@@ -1,0 +1,24 @@
+# Global Organism Tuning
+
+energy:
+  base_photosynthesis_rate: 1.0
+  decay_rate: 0.02
+  mycorrhizal_transfer_ratio: 0.15
+  max_energy_per_seed: 100.0
+
+fractal:
+  max_depth: 3
+  phi: 1.6180339887
+
+dreaming:
+  default_temperature: 0.7
+  idle_threshold_seconds: 300  # 5 minutes of no activity triggers dreaming
+
+healing:
+  minor_threshold: 1
+  moderate_threshold: 5
+  severe_threshold: 10
+
+symbiosis:
+  quorum_threshold: 3
+  similarity_threshold: 0.4
