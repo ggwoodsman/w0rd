@@ -49,7 +49,7 @@ function createReverb(audioCtx) {
   const delay = audioCtx.createDelay(0.5);
   delay.delayTime.value = 0.08;
   const feedback = audioCtx.createGain();
-  feedback.gain.value = 0.3;
+  feedback.gain.value = 0.15;
   const filter = audioCtx.createBiquadFilter();
   filter.type = 'lowpass';
   filter.frequency.value = 3000;
@@ -245,6 +245,7 @@ export function sfxShockwave() {
 
 let _ambientOscs = [];
 let _ambientGain = null;
+let _ambientRunning = false;
 
 export function startAmbient(season = 'spring') {
   stopAmbient();
@@ -253,10 +254,10 @@ export function startAmbient(season = 'spring') {
   if (!c) return;
   
   const configs = {
-    spring:  { freqs: [130.81, 196.00, 261.63], type: 'sine', vol: 0.012, filterFreq: 800 },
-    summer:  { freqs: [146.83, 220.00, 293.66], type: 'sine', vol: 0.014, filterFreq: 1000 },
-    autumn:  { freqs: [123.47, 185.00, 246.94], type: 'triangle', vol: 0.010, filterFreq: 600 },
-    winter:  { freqs: [110.00, 164.81, 220.00], type: 'sine', vol: 0.008, filterFreq: 500 },
+    spring:  { freqs: [130.81, 196.00, 261.63], type: 'sine', vol: 0.010, filterFreq: 800 },
+    summer:  { freqs: [146.83, 220.00, 293.66], type: 'sine', vol: 0.012, filterFreq: 1000 },
+    autumn:  { freqs: [123.47, 185.00, 246.94], type: 'triangle', vol: 0.008, filterFreq: 600 },
+    winter:  { freqs: [110.00, 164.81, 220.00], type: 'sine', vol: 0.006, filterFreq: 500 },
   };
   const cfg = configs[season] || configs.spring;
   
@@ -289,18 +290,21 @@ export function startAmbient(season = 'spring') {
     osc.start();
     _ambientOscs.push(osc, lfo);
   });
+  _ambientRunning = true;
 }
 
 export function stopAmbient() {
+  // Immediately stop and disconnect everything
+  _ambientOscs.forEach(o => { try { o.stop(); } catch { /* already stopped */ } });
+  _ambientOscs = [];
   if (_ambientGain) {
-    try { _ambientGain.gain.linearRampToValueAtTime(0, now() + 1); } catch {}
+    try { _ambientGain.disconnect(); } catch { /* already disconnected */ }
   }
-  setTimeout(() => {
-    _ambientOscs.forEach(o => { try { o.stop(); } catch {} });
-    _ambientOscs = [];
-    _ambientGain = null;
-  }, 1200);
+  _ambientGain = null;
+  _ambientRunning = false;
 }
+
+export function isAmbientRunning() { return _ambientRunning; }
 
 // ═══════════════════════════════════════════════════════════════
 // CONTROLS

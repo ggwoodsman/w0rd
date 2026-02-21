@@ -132,15 +132,21 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
 
   // Global one-time unlock on any user gesture
   useEffect(() => {
+    let fired = false;
     const unlockOnGesture = () => {
-      if (!sfx.isUnlocked()) {
-        sfx.unlock();
-        if (!mutedRef.current) sfx.startAmbient(seasonRef.current);
+      if (fired) return;
+      fired = true;
+      window.removeEventListener('click', unlockOnGesture);
+      window.removeEventListener('keydown', unlockOnGesture);
+      sfx.unlock();
+      if (!mutedRef.current && !sfx.isAmbientRunning()) {
+        sfx.startAmbient(seasonRef.current);
       }
     };
-    window.addEventListener('click', unlockOnGesture, { once: true });
-    window.addEventListener('keydown', unlockOnGesture, { once: true });
+    window.addEventListener('click', unlockOnGesture);
+    window.addEventListener('keydown', unlockOnGesture);
     return () => {
+      fired = true;
       window.removeEventListener('click', unlockOnGesture);
       window.removeEventListener('keydown', unlockOnGesture);
     };
@@ -196,14 +202,19 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
     st.agentNodes = {};
     st.inited = true;
 
-    // Season change sound (only if audio already unlocked)
-    if (prevSeasonRef.current !== season && prevSeasonRef.current) {
-      sfx.sfxSeasonChange();
+    // Season change: restart ambient with new season tone
+    if (prevSeasonRef.current !== season) {
+      if (prevSeasonRef.current) sfx.sfxSeasonChange();
+      prevSeasonRef.current = season;
+      if (sfx.isUnlocked() && !sfx.isAmbientRunning()) {
+        sfx.startAmbient(season);
+      } else if (sfx.isUnlocked() && sfx.isAmbientRunning()) {
+        sfx.stopAmbient();
+        sfx.startAmbient(season);
+      }
     }
-    prevSeasonRef.current = season;
-    if (sfx.isUnlocked()) sfx.startAmbient(season);
 
-    return () => { sfx.stopAmbient(); };
+    // No cleanup — ambient lifecycle managed explicitly
   }, [organColors, season]);
 
   // ── Sync dynamic agent nodes ──
