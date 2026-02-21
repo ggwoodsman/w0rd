@@ -455,11 +455,12 @@ function AppInner() {
 
   const handlePlant = async () => {
     if (!wish.trim()) return;
+    sfx.unlock();
+    sfx.sfxPlant();
     setLoading(true);
     try {
       await api.plant(wish);
       setWish('');
-      sfx.sfxPlant();
       await refresh();
     } catch (e) { console.error(e); }
     setLoading(false);

@@ -125,6 +125,26 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
   const organColors = getOrganColors(season);
   const [muted, setMuted] = useState(false);
   const prevSeasonRef = useRef(season);
+  const mutedRef = useRef(false);
+  const seasonRef = useRef(season);
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
+  useEffect(() => { seasonRef.current = season; }, [season]);
+
+  // Global one-time unlock on any user gesture
+  useEffect(() => {
+    const unlockOnGesture = () => {
+      if (!sfx.isUnlocked()) {
+        sfx.unlock();
+        if (!mutedRef.current) sfx.startAmbient(seasonRef.current);
+      }
+    };
+    window.addEventListener('click', unlockOnGesture, { once: true });
+    window.addEventListener('keydown', unlockOnGesture, { once: true });
+    return () => {
+      window.removeEventListener('click', unlockOnGesture);
+      window.removeEventListener('keydown', unlockOnGesture);
+    };
+  }, []);
 
   // ── Initialize / reinitialize on season change ──
   useEffect(() => {
@@ -703,7 +723,7 @@ export default function NeuralViz({ thinkingEvents, season = 'spring', agents = 
   };
 
   return (
-    <div className="relative w-full h-full" style={{ cursor: 'grab' }} onClick={() => { sfx.unlock(); if (!muted && sfx.isUnlocked()) sfx.startAmbient(season); }}>
+    <div className="relative w-full h-full" style={{ cursor: 'grab' }}>
       <canvas ref={canvasRef} className="w-full h-full" style={{ display: 'block' }} />
 
       {/* Mute toggle */}
